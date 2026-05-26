@@ -5,7 +5,7 @@
 **Production-ready RAG with LangGraph agents, streaming UI, and Langfuse tracing.**
 A reference implementation of the Full-Stack AI Engineer pattern.
 
-[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14+-black.svg)](https://nextjs.org/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-FF6B35.svg)](https://langchain-ai.github.io/langgraph/)
@@ -73,7 +73,7 @@ It is built to be **read, forked, and learned from**. Every architectural decisi
 | Layer            | Choice                                                              |
 | ---------------- | ------------------------------------------------------------------- |
 | Frontend         | Next.js 14+ (App Router), Vercel AI SDK, Tailwind, Shadcn UI        |
-| Backend          | Python 3.11+, FastAPI, Pydantic v2, asyncio                         |
+| Backend          | Python 3.12+, FastAPI, Pydantic v2, asyncio                         |
 | Orchestration    | LangGraph, Tool Calling API                                         |
 | Vector DB        | Pinecone (managed) or Supabase pgvector (self-hosted)               |
 | Embeddings       | OpenAI `text-embedding-3-small` + Cohere/BGE reranker               |
@@ -85,36 +85,42 @@ See [docs/adr/](docs/adr/) for the rationale behind each choice.
 
 ## Quick start
 
-> Prerequisites: Python 3.11+, Node.js 20+, Docker, an Anthropic or OpenAI API key.
+> Prerequisites: Python 3.12+, Node.js 20+, an Anthropic API key.
+> *(Docker, OpenAI/Cohere keys, ingestion pipeline arrive in later milestones — see [Status](#roadmap).)*
+
+### What works today (`v0.1.0`, end of M1)
 
 ```bash
 # Clone and set up
 git clone https://github.com/<your-username>/agentic-rag-stack.git
 cd agentic-rag-stack
-cp .env.example .env  # then fill in your API keys
+cp .env.example .env  # fill in ANTHROPIC_API_KEY at minimum
 
 # Backend
 cd apps/api
 uv sync
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload   # → http://localhost:8000
 
-# Frontend (in a separate terminal)
+# Frontend (separate terminal)
 cd apps/web
 pnpm install
-pnpm dev
+pnpm dev                               # → http://localhost:3000
+```
 
-# Or use docker-compose for everything at once
+Visit `http://localhost:3000` for the health pinger and `/classify` playground.
+Visit `http://localhost:8000/docs` for the auto-generated OpenAPI reference.
+
+### What's coming (later milestones)
+
+```bash
+# M2 — ingest your first documents into the vector store
+uv run python -m app.ingest --source ./sample_docs --collection demo
+
+# M5 — full stack via docker-compose (api + web + langfuse + postgres)
 docker compose up
 ```
 
-Visit `http://localhost:3000` for the chat UI, `http://localhost:8000/docs` for the API reference.
-
-To ingest your first documents:
-
-```bash
-cd apps/api
-uv run python -m app.ingest --source ./sample_docs --collection demo
-```
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the per-milestone breakdown.
 
 ## Roadmap
 
