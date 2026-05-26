@@ -1,9 +1,17 @@
 # ADR-0002: pgvector self-hosted come vector database
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0003](0003-vector-db-choice-qdrant.md)
 - **Date:** 2026-05-26
 - **Deciders:** Francesco
 - **Tags:** `rag`, `infra`, `m2`
+
+> **Nota storica.** Questo ADR è stato superato lo stesso giorno della
+> sua scrittura da [ADR-0003](0003-vector-db-choice-qdrant.md), dopo
+> aver rivalutato la decisione alla luce di un driver che qui non era
+> stato pesato: la **familiarità pregressa** del decisore con Qdrant.
+> Il contenuto qui sotto resta intatto perché documenta il ragionamento
+> originale: utile per capire perché *anche* pgvector sarebbe stata
+> una scelta valida, e quale trade-off è stato accettato cambiando idea.
 
 ---
 

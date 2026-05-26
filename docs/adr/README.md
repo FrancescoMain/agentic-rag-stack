@@ -9,7 +9,8 @@ alternative considerate, decisione, conseguenze.
 | #    | Titolo                                                  | Status   |
 | ---- | ------------------------------------------------------- | -------- |
 | 0001 | [Struttura del repo: monorepo `apps/` + `docs/`](0001-monorepo-structure.md) | Accepted |
-| 0002 | [pgvector self-hosted come vector database](0002-vector-db-choice.md)        | Accepted |
+| 0002 | [pgvector self-hosted come vector database](0002-vector-db-choice.md)        | Superseded by ADR-0003 |
+| 0003 | [Qdrant self-hosted come vector database](0003-vector-db-choice-qdrant.md)   | Accepted |
 
 > Quando aggiungi un nuovo ADR ricordati di registrarlo qui sopra.
 

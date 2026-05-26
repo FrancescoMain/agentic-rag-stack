@@ -189,8 +189,11 @@ in vettori, recuperarli con accuratezza, ed esporre un endpoint
 
 ## Tasks
 
-1. ✅ **ADR sul vector DB** (Pinecone managed vs pgvector self-hosted) —
-   driver: rapidità di setup vs costo zero. → [ADR-0002](adr/0002-vector-db-choice.md): scelto pgvector.
+1. ✅ **ADR sul vector DB** (Pinecone managed vs pgvector self-hosted
+   vs Qdrant self-hosted) — driver iniziali: rapidità di setup vs
+   costo zero. Driver decisivo emerso: familiarità del decisore.
+   → [ADR-0002](adr/0002-vector-db-choice.md) (Superseded) →
+   [ADR-0003](adr/0003-vector-db-choice-qdrant.md): scelto Qdrant.
 2. **Sample corpus**: scegliere un set di documenti pubblici (es. docs
    ufficiale di una libreria open source) da usare come knowledge base demo.
 3. **Chunker** (`app/rag/chunker.py`): strategia token-based con overlap
