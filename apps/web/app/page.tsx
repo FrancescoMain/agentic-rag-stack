@@ -14,25 +14,37 @@
  * client copre solo il quadratino che mostra lo stato del backend.
  */
 
+import { ClassifyPlayground } from "@/components/classify-playground";
 import { HealthStatus } from "@/components/health-status";
 
 export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-zinc-50 px-6 py-16 dark:bg-black">
+    <main className="flex min-h-screen flex-col items-center gap-8 bg-zinc-50 px-6 py-16 dark:bg-black">
       <header className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
           agentic-rag-stack
         </h1>
         <p className="max-w-xl text-balance text-sm text-zinc-600 dark:text-zinc-400">
           Reference implementation di un sistema RAG agentico —{" "}
-          <span className="font-medium">milestone M1</span>: frontend Next.js
-          comunica col backend FastAPI.
+          <span className="font-medium">milestone M1</span>: backend FastAPI
+          espone <code className="font-mono text-xs">/health</code> e{" "}
+          <code className="font-mono text-xs">/classify</code>; il frontend li
+          consuma come normali endpoint REST.
         </p>
       </header>
 
-      <HealthStatus />
+      {/*
+        Due card strutturalmente identiche (stesso pattern Client Component +
+        stati loading/ok/error). La differenza è solo nel backend: una pinga
+        un endpoint banale, l'altra chiama Claude. Dal frontend è invisibile.
+        È il punto narrativo di M1 — "Invisible AI".
+      */}
+      <div className="flex w-full max-w-md flex-col items-stretch gap-6 sm:max-w-2xl sm:flex-row sm:items-start sm:justify-center">
+        <HealthStatus />
+        <ClassifyPlayground />
+      </div>
 
-      <footer className="text-xs text-zinc-400 dark:text-zinc-600">
+      <footer className="mt-auto text-center text-xs text-zinc-400 dark:text-zinc-600">
         Dev workflow: in un terminale{" "}
         <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-900">
           cd apps/api && uv run uvicorn app.main:app --reload

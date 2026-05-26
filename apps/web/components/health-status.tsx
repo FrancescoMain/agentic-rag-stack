@@ -28,10 +28,15 @@ type State =
   | { kind: "error"; message: string };
 
 export function HealthStatus() {
+  // Stato iniziale "loading" perché un fetch parte SUBITO al mount
+  // (vedi useEffect sotto). Risparmia uno step di setState.
   const [state, setState] = useState<State>({ kind: "loading" });
 
-  // Funzione di fetch usata sia al mount sia dal click del bottone.
-  async function load() {
+  // Refresh esplicito (bottone): mostra il loading state, poi fa fetch.
+  // Separato dal mount-fetch perché su mount lo stato è GIÀ loading, quindi
+  // non vogliamo chiamare setState({loading}) di nuovo (la regola lint
+  // `react-hooks/set-state-in-effect` di React 19 lo segnala come spreco).
+  async function refresh() {
     setState({ kind: "loading" });
     try {
       const data = await fetchHealth();
@@ -44,10 +49,25 @@ export function HealthStatus() {
     }
   }
 
-  // Effetto: chiama load() una volta al mount del componente.
-  // L'array vuoto come dipendenze significa "esegui solo al mount".
+  // Mount-fetch: usiamo il flag `cancelled` per evitare setState dopo
+  // unmount (pattern standard React quando l'effetto fa async work).
   useEffect(() => {
-    load();
+    let cancelled = false;
+    fetchHealth()
+      .then((data) => {
+        if (!cancelled) setState({ kind: "ok", data });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setState({
+            kind: "error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -57,7 +77,7 @@ export function HealthStatus() {
           Backend status
         </h2>
         <button
-          onClick={load}
+          onClick={refresh}
           disabled={state.kind === "loading"}
           className="rounded-md border border-zinc-200 px-3 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
         >
