@@ -202,8 +202,11 @@ in vettori, recuperarli con accuratezza, ed esporre un endpoint
    il dominio). Licenza MIT. **Freshness strategy:** re-ingest
    manuale on-demand via CLI (`uv run python -m app.ingest`);
    un'automazione via CI/CD potrà essere valutata in M5.
-3. **Chunker** (`app/rag/chunker.py`): strategia token-based con overlap
-   configurabile. Tipo `Chunk = {id, text, source, metadata}`.
+3. ✅ **Chunker** (`app/rag/chunker.py`): strategia heading-aware
+   token-based (tiktoken cl100k_base) con overlap configurabile.
+   Tipo `Chunk = {id, text, source, heading, position, token_count}`.
+   Default 500/50 token. ID deterministico (sha256) per upsert
+   idempotente in Qdrant. 13 test verdi.
 4. **Embedder** (`app/rag/embedder.py`): wrapper attorno a OpenAI
    `text-embedding-3-small` con batch + retry.
 5. **Vector store client** (`app/rag/vector_store.py`): abstract base
