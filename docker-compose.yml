@@ -1,18 +1,91 @@
 # ========================================================================
-# docker-compose.yml — PLACEHOLDER (sarà riempito in M5)
+# docker-compose.yml — Infrastruttura locale di sviluppo + produzione
 # ------------------------------------------------------------------------
-# In M5 (Production / MLOps) questo file orchestrerà:
+# Filosofia: un unico file che cresce milestone per milestone. Il
+# cappello di ogni servizio dichiara da quale milestone è entrato.
 #
-#   - api       → backend FastAPI (apps/api), buildato da apps/api/Dockerfile
-#   - web       → frontend Next.js (apps/web), buildato da apps/web/Dockerfile
-#   - langfuse  → istanza self-hosted di Langfuse per tracing
-#   - postgres  → DB per Langfuse (e opzionalmente pgvector come alternativa
-#                 a Pinecone)
+# Servizi previsti a fine progetto:
+#   - qdrant    (M2) → vector DB (scelto via ADR-0003). PRESENTE.
+#   - api       (M5) → backend FastAPI (build da apps/api/Dockerfile).
+#   - web       (M5) → frontend Next.js (build da apps/web/Dockerfile).
+#   - langfuse  (M5) → istanza self-hosted di Langfuse per tracing.
+#   - postgres  (M5) → DB di Langfuse.
 #
-# Idea: con un singolo `docker compose up` un nuovo contributor o un
-# valutatore di portfolio porta su tutto lo stack in locale, senza dover
-# capire ogni singolo pezzo.
+# Uso tipico in dev:
 #
-# Lasciato volutamente vuoto adesso per non avere config "morta" nel repo.
-# Quando arriviamo a M5 lo riempiamo step-by-step, un servizio alla volta.
+#     docker compose up -d qdrant         # solo Qdrant in background
+#     docker compose ps                   # vedi cosa gira
+#     docker compose logs -f qdrant       # log live
+#     docker compose down                 # ferma tutto (volumi restano)
+#     docker compose down -v              # ferma e CANCELLA i volumi
+#
+# In M5 aggiungeremo `docker compose up` (tutto lo stack) e un eventuale
+# profilo `--profile dev` vs `--profile prod` per separare casi d'uso.
 # ========================================================================
+
+# La direttiva `version:` è deprecata in Compose v2 e non va inclusa.
+# Compose deduce la versione dal `docker compose` installato.
+
+# ------------------------------------------------------------------------
+# Named volumes (persistenti fra docker compose up/down).
+# ------------------------------------------------------------------------
+# `docker compose down` lascia i volumi intatti; `docker compose down -v`
+# li cancella. I dati di Qdrant vivono qui: collezioni, indici HNSW,
+# snapshot. Senza questo volume, ogni restart del container azzererebbe
+# il vector DB — molesto durante lo sviluppo.
+volumes:
+  qdrant_storage:
+    # `driver: local` è il default; lo esplicitiamo per chiarezza didattica.
+    driver: local
+
+# ------------------------------------------------------------------------
+# Services
+# ------------------------------------------------------------------------
+services:
+  # ----------------------------------------------------------------------
+  # Qdrant — vector database (M2)
+  # ----------------------------------------------------------------------
+  # Vedi ADR-0003 per il perché di Qdrant. Self-hosted in single-node;
+  # in M5 valuteremo Qdrant Cloud come opzione managed per la "prod".
+  #
+  # Porte esposte:
+  #   6333 → REST API + dashboard web (http://localhost:6333/dashboard)
+  #   6334 → gRPC (più veloce per upsert massivi; il client Python lo usa
+  #          se gli passi prefer_grpc=True)
+  qdrant:
+    image: qdrant/qdrant:v1.11.0
+    container_name: agentic-rag-qdrant
+    # `restart: unless-stopped` riavvia il container se crasha o se il
+    # demone Docker si riavvia, MA rispetta lo stop esplicito dell'utente
+    # (`docker compose stop qdrant`).
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      # I dati vivono nel named volume sopra, montati nel path standard
+      # di Qdrant (`/qdrant/storage`). Vedi
+      # https://qdrant.tech/documentation/concepts/storage/
+      - qdrant_storage:/qdrant/storage
+    environment:
+      # In dev lasciamo Qdrant senza API key (auth disabilitata) per
+      # semplicità — comunque ascolta solo su localhost. In M5 / prod
+      # imposteremo QDRANT__SERVICE__API_KEY da .env e useremo TLS.
+      # Esempio per attivarla:
+      #   QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+      #
+      # Disabilitiamo la telemetria anonima inviata di default da Qdrant
+      # all'home: scelta più conservativa per un progetto didattico,
+      # niente dati in volo verso terzi senza necessità.
+      QDRANT__TELEMETRY_DISABLED: "true"
+    # Healthcheck: Qdrant espone un endpoint `/readyz` (200 quando è pronto
+    # ad accettare query). `docker compose up -d --wait qdrant` userà
+    # questo healthcheck per non ritornare prima che il servizio sia su.
+    # Usiamo `wget` perché l'immagine ufficiale Qdrant non include `curl`,
+    # ma include `wget` (busybox).
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

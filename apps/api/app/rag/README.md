@@ -4,8 +4,19 @@ Tutto ciò che riguarda **trasformare documenti in conoscenza
 recuperabile** e poi **recuperarla in modo affidabile** al momento della
 query.
 
-> **Stato attuale:** vuota. Sarà popolata in **M2** (Knowledge base &
-> RAG pipeline).
+> **Stato attuale (inizio M2):** cartella vuota a livello di codice, ma
+> l'infrastruttura sottostante è in piedi.
+>
+> - **Vector DB**: **Qdrant** self-hosted in docker
+>   (vedi [ADR-0003](../../../../docs/adr/0003-vector-db-choice-qdrant.md)
+>   per il perché, e `docker-compose.yml` alla root per il setup).
+>   Lanciare con `docker compose up -d qdrant`, dashboard su
+>   `http://localhost:6333/dashboard`.
+> - **Embeddings**: `text-embedding-3-small` di OpenAI (1536-dim).
+>   Vedi `.env.example` per le variabili.
+> - **Reranker**: Cohere `rerank-3` (con fallback BGE self-hosted senza chiave).
+>
+> I file Python di questa cartella saranno creati nei prossimi task M2.
 
 ## Le 4 fasi di una pipeline RAG
 
