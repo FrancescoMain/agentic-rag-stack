@@ -34,8 +34,25 @@ Perché un singleton `settings`?
     poche righe e i test possono comunque sovrascrivere via env var.
 """
 
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ----------------------------------------------------------------------------
+# Percorso assoluto della root del repo, calcolato dalla posizione di QUESTO file.
+# ----------------------------------------------------------------------------
+# `__file__` qui è ".../apps/api/app/config.py".
+# Risalendo i parent:
+#   parents[0] → app/
+#   parents[1] → api/
+#   parents[2] → apps/
+#   parents[3] → root del repo (agentic-rag-stack/)
+#
+# Calcolarlo così significa: indipendentemente da DOVE viene lanciato uvicorn,
+# pydantic-settings carica sempre lo stesso `.env` (quello al repo root).
+# In una monorepo questo evita la confusione di "ho dimenticato di stare in apps/api/".
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
@@ -71,15 +88,24 @@ class Settings(BaseSettings):
     # Default "dev" perché la maggior parte delle sessioni è locale.
     log_format: str = Field(default="dev")
 
+    # ------------------------------------------------------------------------
+    # LLM provider keys (M1+)
+    # ------------------------------------------------------------------------
+    # Chiave API Anthropic, usata dal servizio classificatore (vedi
+    # app/services/classifier.py) e in futuro dagli agenti LangGraph (M4).
+    # Default "" perché il backend deve poter girare anche solo per /health
+    # senza la chiave configurata. Gli endpoint che la richiedono
+    # controllano esplicitamente e rispondono 503 se manca.
+    anthropic_api_key: str = Field(default="")
+
     # SettingsConfigDict configura il comportamento del loader:
-    #   env_file: path del file .env da caricare se esiste.
+    #   env_file: path ASSOLUTO del .env da caricare (vedi _REPO_ROOT sopra).
     #   env_file_encoding: come leggerlo (utf-8 sempre sicuro).
     #   case_sensitive=False: APP_ENV / app_env sono trattate uguali.
-    #   extra="ignore": altre variabili nel .env (es. ANTHROPIC_API_KEY
-    #                   che non gestiamo ancora qui) vengono ignorate
-    #                   senza errore.
+    #   extra="ignore": altre variabili nel .env (es. PINECONE_API_KEY per
+    #                   milestone successive) vengono ignorate senza errore.
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_REPO_ROOT / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

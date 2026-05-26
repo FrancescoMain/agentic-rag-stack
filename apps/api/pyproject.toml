@@ -35,6 +35,12 @@ dependencies = [
   # vars / .env e valida i tipi. Mental model: "Zod che legge anche
   # il process.env".
   "pydantic-settings>=2.5.0",
+  # anthropic: SDK Python ufficiale di Anthropic per chiamare Claude.
+  # Espone client sincroni e async (usiamo l'async per non bloccare
+  # l'event loop ASGI quando aspettiamo la risposta del modello,
+  # che può durare diversi secondi). Mental model: pattern simile a
+  # `@anthropic-ai/sdk` per Node.
+  "anthropic>=0.40.0",
 ]
 
 # -----------------------------------------------------------------------------
@@ -71,6 +77,25 @@ extend-exclude = [".venv"]
 # "B" (bugbear: bug pattern comuni).
 # Documentazione: https://docs.astral.sh/ruff/rules/
 select = ["E", "F", "I", "UP", "B"]
+
+# bugbear B008 vieta i function call nei default degli argomenti perché
+# in Python normale è un anti-pattern (il default è valutato una volta
+# all'import del modulo). In FastAPI, però, `Depends(...)` / `Query(...)` /
+# `Body(...)` come default è il pattern idiomatico (sono "marker" che FastAPI
+# riconosce, non vengono chiamati). La lista qui dice a ruff di considerarli
+# safe nei default.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+  "fastapi.Body",
+  "fastapi.Cookie",
+  "fastapi.Depends",
+  "fastapi.File",
+  "fastapi.Form",
+  "fastapi.Header",
+  "fastapi.Path",
+  "fastapi.Query",
+  "fastapi.Security",
+]
 
 # -----------------------------------------------------------------------------
 # Configurazione di pytest.

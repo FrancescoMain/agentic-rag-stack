@@ -54,8 +54,13 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 
-# FastAPI: la classe principale, usata per creare l'ASGI app.
-from fastapi import FastAPI, Request, Response
+# Anthropic SDK: client async per chiamare Claude. `APIError` è la
+# superclasse di tutti gli errori upstream (timeout, 5xx, rate limit).
+from anthropic import APIError, AsyncAnthropic
+
+# FastAPI: la classe principale + Depends per dependency injection.
+# HTTPException: l'eccezione che FastAPI sa già tradurre in risposte HTTP.
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 
 # CORSMiddleware: middleware ASGI per gestire la Cross-Origin Resource
 # Sharing. È il "permesso esplicito" che il backend dà al browser per
@@ -64,14 +69,17 @@ from fastapi import FastAPI, Request, Response
 # In termini Express: equivalente del package `cors`.
 from fastapi.middleware.cors import CORSMiddleware
 
-# Pydantic BaseModel: superclasse per definire schemi I/O tipizzati.
-from pydantic import BaseModel
+# Pydantic BaseModel + Field per schemi I/O tipizzati e validati.
+from pydantic import BaseModel, Field, ValidationError
 
 # Settings: il singleton di configurazione (vedi app/config.py).
 from app.config import settings
 
 # Logging: setup centralizzato + helper per il request_id.
 from app.log import set_request_id, setup_logging
+
+# Servizio classificatore: funzione pura + schema risultato.
+from app.services.classifier import ClassifyResult, classify_text
 
 # Logger di modulo. Convenzione Python: `logging.getLogger(__name__)` usa
 # il dotted path del modulo (qui "app.main"), così nei log puoi capire
@@ -111,15 +119,35 @@ def _read_version() -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging(level=settings.log_level, fmt=settings.log_format)
+
+    # Creiamo il client Anthropic UNA volta all'avvio (se la chiave è
+    # configurata). Lo memorizziamo su `app.state`, attributo "borsa"
+    # che FastAPI/Starlette espone proprio per condividere oggetti
+    # con il ciclo di vita dell'applicazione. La dependency
+    # `get_anthropic_client` (sotto) lo legge da lì.
+    #
+    # Senza chiave configurata, `app.state.anthropic` resta None: il
+    # backend continua a funzionare per /health, ma /classify risponde
+    # 503 ("Service Unavailable") finché non c'è la chiave.
+    if settings.anthropic_api_key:
+        app.state.anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    else:
+        app.state.anthropic = None
+
     logger.info(
         "backend_starting",
         extra={
             "env": settings.app_env,
             "version": app.version,
             "log_format": settings.log_format,
+            "anthropic_configured": app.state.anthropic is not None,
         },
     )
     yield  # <-- l'app è "viva" mentre siamo bloccati qui
+
+    # Shutdown: chiudiamo il client per liberare le connessioni HTTP del pool.
+    if app.state.anthropic is not None:
+        await app.state.anthropic.close()
     logger.info("backend_shutdown")
 
 
@@ -277,3 +305,104 @@ async def health() -> HealthResponse:
     (vector DB raggiungibile? LLM provider risponde? ecc.).
     """
     return HealthResponse(status="ok", version=app.version)
+
+
+# ===========================================================================
+# Endpoint: POST /classify — "Invisible AI"
+# ===========================================================================
+# Esempio del pattern AI più sottovalutato: un endpoint REST che dietro le
+# quinte chiama un LLM, ma dall'esterno è una funzione "normale". Niente
+# chat, niente streaming, niente agenti — sostituisce una funzione
+# tradizionale che farebbe regex / rule-based, con una più flessibile.
+
+
+# ---------------------------------------------------------------------------
+# Schema della richiesta.
+# ---------------------------------------------------------------------------
+# `Field` aggiunge constraint a un campo Pydantic. `min_length=1` rifiuta
+# stringhe vuote, `max_length=4000` mette un tetto sano: protegge il budget
+# token (input ~4000 char → ~1000 token) e previene abuso (un input
+# enorme è quasi sempre un errore lato chiamante).
+class ClassifyRequest(BaseModel):
+    """Body atteso da POST /classify."""
+
+    text: str = Field(min_length=1, max_length=4000)
+
+
+# ---------------------------------------------------------------------------
+# Dependency: recupera il client Anthropic dallo stato dell'app.
+# ---------------------------------------------------------------------------
+# In FastAPI le "dependencies" sono funzioni che restituiscono qualcosa
+# di cui un endpoint ha bisogno. FastAPI le chiama per te quando una route
+# le dichiara via `Depends(...)`. Vantaggi:
+#   - **Testabilità**: nei test sostituisco `get_anthropic_client` con un
+#     fake usando `app.dependency_overrides[get_anthropic_client] = ...`.
+#     Niente `mock.patch` invasivo.
+#   - **Errori coerenti**: se la chiave Anthropic non è configurata,
+#     l'endpoint risponde 503 prima ancora di entrare nel body.
+#
+# La firma riceve `Request`: è il pattern standard per accedere a
+# `request.app.state`, dove il `lifespan` ha messo il client.
+def get_anthropic_client(request: Request) -> AsyncAnthropic:
+    """Restituisce il client Anthropic configurato per questa app.
+
+    Raises:
+        HTTPException 503: se ANTHROPIC_API_KEY non è configurata.
+    """
+    client = getattr(request.app.state, "anthropic", None)
+    if client is None:
+        # 503 Service Unavailable: il servizio funziona, ma una
+        # dipendenza necessaria per QUESTO endpoint non è disponibile.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "ANTHROPIC_API_KEY non configurata sul server. "
+                "Aggiungila al file .env nella root del repo e riavvia."
+            ),
+        )
+    return client
+
+
+# ---------------------------------------------------------------------------
+# Route: POST /classify
+# ---------------------------------------------------------------------------
+@app.post("/classify", response_model=ClassifyResult)
+async def classify(
+    body: ClassifyRequest,
+    # `Depends(get_anthropic_client)`: FastAPI chiama la funzione per noi
+    # prima di invocare l'handler, e ne mette il risultato qui. Se la
+    # funzione alza HTTPException, l'handler non viene mai chiamato.
+    client: AsyncAnthropic = Depends(get_anthropic_client),
+) -> ClassifyResult:
+    """Classifica un testo in `bug | feature | question | spam` via Claude.
+
+    Errori mappati:
+      - 400 Bad Request: input non valido (gestito automaticamente da
+        FastAPI/Pydantic via lo schema `ClassifyRequest`).
+      - 502 Bad Gateway: il modello ha restituito JSON non valido o
+        non rispetta lo schema atteso.
+      - 503 Service Unavailable: chiave Anthropic non configurata.
+      - 504 Gateway Timeout / 5xx: la chiamata ad Anthropic è fallita.
+    """
+    try:
+        return await classify_text(client, body.text)
+    except (ValueError, ValidationError) as exc:
+        # Il modello ha sbroccato (JSON malformato o schema sbagliato).
+        # È un "upstream error", non un nostro bug.
+        logger.warning("classify_upstream_invalid", extra={"error": str(exc)})
+        raise HTTPException(
+            status_code=502,
+            detail="Il modello ha restituito una risposta non valida.",
+        ) from exc
+    except APIError as exc:
+        # Errori dell'API Anthropic (rate limit, 5xx, timeout, ecc.).
+        # Loghiamo come error perché potrebbe richiedere attenzione operativa.
+        logger.error(
+            "classify_anthropic_failed",
+            extra={"error_type": type(exc).__name__, "error": str(exc)},
+        )
+        # 504 quando è un timeout, altrimenti 502. Tenuto semplice: 502.
+        raise HTTPException(
+            status_code=502,
+            detail="Errore upstream durante la chiamata al modello.",
+        ) from exc
