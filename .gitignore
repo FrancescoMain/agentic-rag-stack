@@ -1,0 +1,73 @@
+# ========================================================================
+# .gitignore — agentic-rag-stack
+# ------------------------------------------------------------------------
+# Tutto ciò che NON deve finire nel repo: artefatti di build, dipendenze,
+# segreti, cache di tooling locale. Organizzato per sezione perché su
+# una monorepo i tipi di file da escludere sono molti.
+# ========================================================================
+
+# --- Environment / secrets ------------------------------------------------
+# Il file .env contiene le API key reali (Anthropic, OpenAI, Pinecone, ecc).
+# Non deve MAI essere committato. Il template .env.example invece sì.
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# --- Python (apps/api) ----------------------------------------------------
+# __pycache__: cache di bytecode generata da Python a ogni import.
+# .venv: virtualenv locale, gestito da uv. Mai committarlo (pesa centinaia di MB).
+# *.egg-info: metadati di build di pacchetti Python.
+# .pytest_cache, .mypy_cache, .ruff_cache: cache di tool dev (pytest, mypy, ruff).
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# --- Node / Next.js (apps/web) -------------------------------------------
+# node_modules: dipendenze JS, ricostruibili da package.json + lockfile.
+# .next: cartella di build di Next.js (.next/cache, .next/server, ecc.).
+# .turbo: cache di Turborepo se in futuro lo aggiungiamo.
+node_modules/
+.next/
+.turbo/
+out/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Docker / runtime ----------------------------------------------------
+# Volumi locali generati da docker compose (es. dati Postgres, Langfuse).
+docker-data/
+*.pid
+
+# --- IDE / OS ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# --- Claude Code locale --------------------------------------------------
+# settings.local.json: preferenze personali (permessi, ecc.) — non condivise.
+# Se in futuro creiamo .claude/settings.json (condiviso col team) quello SÌ va committato.
+.claude/settings.local.json
+
+# --- Log / temp ----------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tmp

@@ -1,0 +1,18 @@
+# ========================================================================
+# docker-compose.yml — PLACEHOLDER (sarà riempito in M5)
+# ------------------------------------------------------------------------
+# In M5 (Production / MLOps) questo file orchestrerà:
+#
+#   - api       → backend FastAPI (apps/api), buildato da apps/api/Dockerfile
+#   - web       → frontend Next.js (apps/web), buildato da apps/web/Dockerfile
+#   - langfuse  → istanza self-hosted di Langfuse per tracing
+#   - postgres  → DB per Langfuse (e opzionalmente pgvector come alternativa
+#                 a Pinecone)
+#
+# Idea: con un singolo `docker compose up` un nuovo contributor o un
+# valutatore di portfolio porta su tutto lo stack in locale, senza dover
+# capire ogni singolo pezzo.
+#
+# Lasciato volutamente vuoto adesso per non avere config "morta" nel repo.
+# Quando arriviamo a M5 lo riempiamo step-by-step, un servizio alla volta.
+# ========================================================================
