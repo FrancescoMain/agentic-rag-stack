@@ -45,11 +45,17 @@ chiamata `app`". `--reload` riavvia il server a ogni modifica di file
 (solo per dev).
 """
 
-# stdlib: per leggere la versione dal pyproject.toml senza ripeterla a mano.
+# stdlib: per misurare la durata di una request, per generare ID univoci,
+# e per leggere la versione del pacchetto.
+import logging
+import time
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 
 # FastAPI: la classe principale, usata per creare l'ASGI app.
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 
 # CORSMiddleware: middleware ASGI per gestire la Cross-Origin Resource
 # Sharing. È il "permesso esplicito" che il backend dà al browser per
@@ -63,6 +69,14 @@ from pydantic import BaseModel
 
 # Settings: il singleton di configurazione (vedi app/config.py).
 from app.config import settings
+
+# Logging: setup centralizzato + helper per il request_id.
+from app.log import set_request_id, setup_logging
+
+# Logger di modulo. Convenzione Python: `logging.getLogger(__name__)` usa
+# il dotted path del modulo (qui "app.main"), così nei log puoi capire
+# da dove arriva ogni riga. Tutte le librerie Python fanno così.
+logger = logging.getLogger(__name__)
 
 
 def _read_version() -> str:
@@ -83,6 +97,33 @@ def _read_version() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Lifespan: codice che gira all'avvio e allo shutdown dell'app.
+# ---------------------------------------------------------------------------
+# Il pattern moderno di FastAPI per fare setup/teardown è il `lifespan`:
+# un async context manager che parte all'avvio del processo e termina
+# alla chiusura. Sostituisce i vecchi decorator `@app.on_event("startup")`
+# e `@app.on_event("shutdown")`, che sono deprecati.
+#
+# Qui dentro inizializziamo il logging UNA volta: configurare il root
+# logger è un'operazione globale, va fatta una volta sola e idealmente
+# il prima possibile, in modo che tutti i log successivi (compresi quelli
+# emessi durante il request handling) usino la nostra config.
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    setup_logging(level=settings.log_level, fmt=settings.log_format)
+    logger.info(
+        "backend_starting",
+        extra={
+            "env": settings.app_env,
+            "version": app.version,
+            "log_format": settings.log_format,
+        },
+    )
+    yield  # <-- l'app è "viva" mentre siamo bloccati qui
+    logger.info("backend_shutdown")
+
+
+# ---------------------------------------------------------------------------
 # Creazione dell'ASGI application.
 # ---------------------------------------------------------------------------
 # `app` è la variabile che uvicorn cerca quando lo lanci con
@@ -93,7 +134,70 @@ app = FastAPI(
     title="agentic-rag-api",
     description="Backend del progetto agentic-rag-stack.",
     version=_read_version(),
+    lifespan=lifespan,
 )
+
+
+# ---------------------------------------------------------------------------
+# Middleware: Request ID + structured request logging.
+# ---------------------------------------------------------------------------
+# FastAPI (Starlette) supporta i middleware via `@app.middleware("http")`.
+# Sono funzioni `async` che ricevono `(request, call_next)`: come Express,
+# decidi cosa fare prima e dopo che la prossima funzione gestisce la request.
+#
+# Cosa fa il nostro middleware:
+#   1. Genera (o eredita dall'header X-Request-ID) un identificativo univoco.
+#   2. Lo mette nel ContextVar (vedi app/log.py) così ogni log emesso
+#      durante il request handling lo include automaticamente.
+#   3. Logga `request_start` e poi `request_end` con duration_ms e status.
+#   4. Restituisce l'header `X-Request-ID` al client (utile per il debug:
+#      se l'utente segnala un errore, può copiare l'ID e cercarlo nei log).
+@app.middleware("http")
+async def request_id_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    # Se il client manda un X-Request-ID (es. per propagare un trace ID
+    # da un servizio upstream), lo riusiamo; altrimenti generiamo un UUID4.
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    set_request_id(request_id)
+
+    logger.info(
+        "request_start",
+        extra={"path": request.url.path, "method": request.method},
+    )
+
+    # time.perf_counter() è il timer monotono ad alta risoluzione; ideale
+    # per misurare durate, non orari assoluti (per quelli serve time.time()).
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        # `exc_info=True` allega il traceback al log. Senza, vedresti solo
+        # il messaggio e dovresti indovinare cosa è esploso.
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.exception(
+            "request_error",
+            extra={
+                "path": request.url.path,
+                "method": request.method,
+                "duration_ms": round(duration_ms, 2),
+            },
+        )
+        raise  # rilancia: lasciamo che FastAPI risponda con 500.
+
+    duration_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        "request_end",
+        extra={
+            "path": request.url.path,
+            "method": request.method,
+            "status": response.status_code,
+            "duration_ms": round(duration_ms, 2),
+        },
+    )
+    response.headers["x-request-id"] = request_id
+    return response
 
 
 # ---------------------------------------------------------------------------

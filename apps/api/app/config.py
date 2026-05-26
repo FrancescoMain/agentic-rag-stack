@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     # In prod sarà l'URL pubblica del frontend.
     frontend_origin: str = Field(default="http://localhost:3000")
 
+    # Livello minimo di log emesso. DEBUG mostra tutto (incluso il chiacchiericcio
+    # interno di httpx, anthropic, ecc.), INFO è il default sano per dev.
+    # In prod metteremo "WARNING" per ridurre rumore (M5).
+    log_level: str = Field(default="INFO")
+
+    # Formato dei log: "dev" → human-readable colorato; "json" → strutturato
+    # parsabile da aggregatori esterni (Datadog, CloudWatch, ecc).
+    # Default "dev" perché la maggior parte delle sessioni è locale.
+    log_format: str = Field(default="dev")
+
     # SettingsConfigDict configura il comportamento del loader:
     #   env_file: path del file .env da caricare se esiste.
     #   env_file_encoding: come leggerlo (utf-8 sempre sicuro).
