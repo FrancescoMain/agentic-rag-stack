@@ -11,6 +11,7 @@ alternative considerate, decisione, conseguenze.
 | 0001 | [Struttura del repo: monorepo `apps/` + `docs/`](0001-monorepo-structure.md) | Accepted |
 | 0002 | [pgvector self-hosted come vector database](0002-vector-db-choice.md)        | Superseded by ADR-0003 |
 | 0003 | [Qdrant self-hosted come vector database](0003-vector-db-choice-qdrant.md)   | Accepted |
+| 0004 | [OpenAI `text-embedding-3-small` come embedding model](0004-embedding-model-choice.md) | Accepted |
 
 > Quando aggiungi un nuovo ADR ricordati di registrarlo qui sopra.
 

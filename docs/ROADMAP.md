@@ -208,7 +208,8 @@ in vettori, recuperarli con accuratezza, ed esporre un endpoint
    Default 500/50 token. ID deterministico (sha256) per upsert
    idempotente in Qdrant. 13 test verdi.
 4. **Embedder** (`app/rag/embedder.py`): wrapper attorno a OpenAI
-   `text-embedding-3-small` con batch + retry.
+   `text-embedding-3-small` con batch + retry. Scelta motivata in
+   [ADR-0004](adr/0004-embedding-model-choice.md).
 5. **Vector store client** (`app/rag/vector_store.py`): abstract base
    class + implementazione concreta (Pinecone o pgvector secondo ADR).
 6. **Ingestion CLI** (`app/ingest.py`): `uv run python -m app.ingest --source ./sample_docs --collection demo`
