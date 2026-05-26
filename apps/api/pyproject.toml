@@ -28,6 +28,13 @@ dependencies = [
   # websockets, watchfiles (per --reload), uvloop (event loop più veloce).
   # Senza l'extra, uvicorn funziona lo stesso ma più lento.
   "uvicorn[standard]>=0.30.0",
+  # pydantic-settings: estensione ufficiale di Pydantic per leggere
+  # configurazione da variabili d'ambiente e/o file .env in modo
+  # type-safe. Definisci una classe `Settings(BaseSettings)` con i
+  # campi (es. `frontend_origin: str`), Pydantic la popola da env
+  # vars / .env e valida i tipi. Mental model: "Zod che legge anche
+  # il process.env".
+  "pydantic-settings>=2.5.0",
 ]
 
 # -----------------------------------------------------------------------------

@@ -51,8 +51,18 @@ from importlib.metadata import PackageNotFoundError, version
 # FastAPI: la classe principale, usata per creare l'ASGI app.
 from fastapi import FastAPI
 
+# CORSMiddleware: middleware ASGI per gestire la Cross-Origin Resource
+# Sharing. È il "permesso esplicito" che il backend dà al browser per
+# consentire fetch da un'origine diversa (es. frontend su :3000 chiama
+# backend su :8000). Senza questo, il browser bloccherebbe le risposte.
+# In termini Express: equivalente del package `cors`.
+from fastapi.middleware.cors import CORSMiddleware
+
 # Pydantic BaseModel: superclasse per definire schemi I/O tipizzati.
 from pydantic import BaseModel
+
+# Settings: il singleton di configurazione (vedi app/config.py).
+from app.config import settings
 
 
 def _read_version() -> str:
@@ -83,6 +93,38 @@ app = FastAPI(
     title="agentic-rag-api",
     description="Backend del progetto agentic-rag-stack.",
     version=_read_version(),
+)
+
+
+# ---------------------------------------------------------------------------
+# Middleware CORS — consente al frontend di chiamare il backend dal browser.
+# ---------------------------------------------------------------------------
+# Quando il browser su `localhost:3000` fa `fetch('http://localhost:8000/...')`,
+# scatta la same-origin policy: il browser BLOCCA la risposta a meno che il
+# server non includa l'header `Access-Control-Allow-Origin` con l'origine
+# del frontend.
+#
+# `CORSMiddleware` aggiunge quegli header automaticamente.
+#
+# Configurazione minimale (M1):
+#   - allow_origins: solo l'origine del frontend dichiarato nel .env.
+#                    NON usare ["*"] in produzione: significa "qualunque
+#                    sito può chiamarti da browser".
+#   - allow_credentials=True: permette al browser di mandare cookies /
+#                    Authorization headers. Sarà utile in M3.
+#   - allow_methods / allow_headers: per ora autorizziamo tutto, in
+#                    futuro restringeremo (es. solo POST per /chat).
+#
+# Curiosità: CORS NON è una feature di sicurezza del server. Da `curl`
+# (che non è un browser) il backend risponde sempre. CORS protegge gli
+# utenti del browser contro siti malevoli che proverebbero a chiamare
+# API su cui sono loggati altrove.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
