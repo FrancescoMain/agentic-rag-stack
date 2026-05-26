@@ -41,6 +41,12 @@ dependencies = [
   # che può durare diversi secondi). Mental model: pattern simile a
   # `@anthropic-ai/sdk` per Node.
   "anthropic>=0.40.0",
+  # tiktoken: tokenizer ufficiale OpenAI (scritto in Rust, molto veloce).
+  # Lo usiamo nel chunker (app/rag/chunker.py) per misurare la dimensione
+  # dei chunk in token "veri" — cioè le unità che il modello vede
+  # davvero — invece di approssimare con caratteri o parole. Encoding
+  # `cl100k_base` (GPT-4, text-embedding-3-*) è il default 2026.
+  "tiktoken>=0.7",
 ]
 
 # -----------------------------------------------------------------------------
