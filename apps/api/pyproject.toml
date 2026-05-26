@@ -1,0 +1,92 @@
+# =============================================================================
+# pyproject.toml — manifest del package Python "agentic-rag-api"
+# -----------------------------------------------------------------------------
+# Equivalente concettuale del `package.json` di Node:
+#   - metadati del progetto (nome, versione, descrizione)
+#   - dipendenze runtime
+#   - dipendenze di sviluppo (separate, non installate in produzione)
+#   - configurazione dei tool (ruff, pytest, ecc.)
+#
+# Lo standard è PEP 621 (sezione [project]) + PEP 735 (sezione
+# [dependency-groups]). uv legge esattamente questo file.
+# =============================================================================
+
+[project]
+name = "agentic-rag-api"
+version = "0.0.1"
+description = "Backend Python per agentic-rag-stack: FastAPI + LangGraph + RAG"
+readme = "README.md"
+requires-python = ">=3.12"
+# Le dipendenze runtime: tutto ciò che serve a far girare l'app in produzione.
+# Vincolo ">=X.Y" = "almeno X.Y, qualunque versione successiva compatibile".
+# Il *lockfile* (uv.lock, generato da uv sync) congela le versioni esatte.
+dependencies = [
+  # FastAPI: il web framework ASGI. Vedi cappello in app/main.py.
+  "fastapi>=0.115.0",
+  # uvicorn[standard]: server ASGI che ESEGUE l'app FastAPI.
+  # L'extra "[standard]" include httptools (parser HTTP veloce in C),
+  # websockets, watchfiles (per --reload), uvloop (event loop più veloce).
+  # Senza l'extra, uvicorn funziona lo stesso ma più lento.
+  "uvicorn[standard]>=0.30.0",
+]
+
+# -----------------------------------------------------------------------------
+# Dipendenze di SVILUPPO (non installate in produzione).
+# -----------------------------------------------------------------------------
+# `[dependency-groups]` è lo standard moderno (PEP 735). Per installarle:
+#   uv sync                  # installa main + tutti i dev-groups di default
+#   uv sync --no-dev         # solo dipendenze runtime (per build prod)
+[dependency-groups]
+dev = [
+  # pytest: framework di testing standard nel mondo Python.
+  # Equivalente concettuale: Vitest / Jest.
+  "pytest>=8.0",
+  # httpx: client HTTP async. Usato da FastAPI.TestClient sotto il cofano.
+  # In test puro non sempre serve esplicito, ma è buona norma metterlo per essere
+  # sicuri che la versione sia controllata.
+  "httpx>=0.27",
+  # ruff: linter + formatter unificato (sostituisce flake8 + black + isort).
+  # Scritto in Rust, è ~100x più veloce dei tool storici.
+  "ruff>=0.6",
+]
+
+# -----------------------------------------------------------------------------
+# Configurazione di ruff (linter + formatter).
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+# Cartelle da NON analizzare (oltre ai default come .git, __pycache__).
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+# Famiglie di regole abilitate. Codici come "E" (pycodestyle), "F" (pyflakes),
+# "I" (isort: ordinamento import), "UP" (pyupgrade: sintassi moderna),
+# "B" (bugbear: bug pattern comuni).
+# Documentazione: https://docs.astral.sh/ruff/rules/
+select = ["E", "F", "I", "UP", "B"]
+
+# -----------------------------------------------------------------------------
+# Configurazione di pytest.
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+# Pytest scoprirà i test in queste cartelle.
+testpaths = ["tests"]
+# Pattern dei nomi: tutti i file `test_*.py` e funzioni `test_*`.
+# Verbose output di default per leggibilità.
+addopts = "-v"
+
+# -----------------------------------------------------------------------------
+# Sezione [build-system].
+# -----------------------------------------------------------------------------
+# Indica a uv (e ai tool di build) come costruire il pacchetto. Per ora il
+# progetto è un'applicazione, non una libreria pubblicabile, ma uv si aspetta
+# comunque questa sezione. Usiamo `hatchling`, il backend di build più diffuso
+# nel 2026 (è quello che uv sceglie di default con `uv init`).
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Diciamo a hatchling di trattare la cartella `app/` come il "pacchetto" del
+# progetto. Quando uv installa il progetto nel venv, `import app` funziona.
+packages = ["app"]
