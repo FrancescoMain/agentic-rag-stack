@@ -78,13 +78,16 @@ services:
       # all'home: scelta più conservativa per un progetto didattico,
       # niente dati in volo verso terzi senza necessità.
       QDRANT__TELEMETRY_DISABLED: "true"
-    # Healthcheck: Qdrant espone un endpoint `/readyz` (200 quando è pronto
-    # ad accettare query). `docker compose up -d --wait qdrant` userà
-    # questo healthcheck per non ritornare prima che il servizio sia su.
-    # Usiamo `wget` perché l'immagine ufficiale Qdrant non include `curl`,
-    # ma include `wget` (busybox).
+    # Healthcheck: Qdrant espone /readyz (200 quando è pronto), ma
+    # l'immagine ufficiale è una debian-slim minimale che non include
+    # né curl né wget. Include però bash, e bash supporta nativamente
+    # la "redirection magica" /dev/tcp/<host>/<port>: tentare un connect
+    # TCP sulla porta 6333 di localhost. Se il connect riesce, Qdrant
+    # ha bindato la porta — sufficiente per uno smoke check di dev.
+    # Per un check "veramente HTTP" di /readyz servirebbe installare un
+    # client HTTP nel container (Dockerfile custom). Non vale la pena qui.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/6333"]
       interval: 10s
       timeout: 5s
       retries: 5
