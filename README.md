@@ -122,7 +122,7 @@ The project is built in five milestones. Each milestone is shippable on its own.
 
 | Milestone | Focus                                       | Status         |
 | --------- | ------------------------------------------- | -------------- |
-| **M1**    | Backend foundations & Invisible AI          | 🟢 In progress |
+| **M1**    | Backend foundations & Invisible AI          | ✅ Done        |
 | **M2**    | Knowledge base & RAG pipeline               | ⚪ Planned     |
 | **M3**    | Streaming AI-first frontend                 | ⚪ Planned     |
 | **M4**    | Agentic workflows & Human-in-the-Loop       | ⚪ Planned     |

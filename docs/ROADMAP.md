@@ -38,7 +38,7 @@ Ogni milestone ha 5 sezioni standard:
 | #  | Milestone                                | Status | Sintesi                                                       |
 | -- | ---------------------------------------- | ------ | ------------------------------------------------------------- |
 | M0 | Setup & scaffolding                      | ✅     | Tooling, struttura monorepo, primo ADR, ROADMAP               |
-| M1 | Backend foundations & Invisible AI       | 🟡     | FastAPI funzionante, primo endpoint LLM "invisibile"          |
+| M1 | Backend foundations & Invisible AI       | ✅     | FastAPI con /health + /classify (Haiku 4.5), FE pinger + playground |
 | M2 | Knowledge base & RAG pipeline            | ⚪     | Ingestion, embedding, hybrid search, reranking, citazioni     |
 | M3 | Streaming AI-first frontend              | ⚪     | Next.js + AI SDK, streaming SSE, citazioni inline, Gen UI     |
 | M4 | Agentic workflows & Human-in-the-Loop    | ⚪     | LangGraph, tool calling, evaluator loop, approval gates       |
@@ -96,7 +96,7 @@ Da qui in poi possiamo scrivere codice senza più discutere *dove* metterlo.
 
 # M1 — Backend foundations & Invisible AI
 
-**Status:** 🟡 In progress (aperta 2026-05-26)
+**Status:** ✅ Done (chiusa 2026-05-26)
 
 ## Focus
 
@@ -130,7 +130,7 @@ al frontend, che lo consuma come una normale REST API.
    e `/classify` (con mock del client Anthropic — 15 test totali).
 8. ✅ **Frontend pinger**: `apps/web/` scaffolded con Next.js, home page
    che mostra lo stato live di `/health` del backend.
-9. ⚪ **README di `apps/api/`**: aggiornare con istruzioni "come si avvia"
+9. ✅ **README di `apps/api/`**: aggiornare con istruzioni "come si avvia"
    complete + concetti chiave.
 10. ✅ **Frontend playground per `/classify`**: nella home page Next.js,
     seconda card con textarea + bottone "Classify" + visualizzazione
