@@ -194,8 +194,14 @@ in vettori, recuperarli con accuratezza, ed esporre un endpoint
    costo zero. Driver decisivo emerso: familiarità del decisore.
    → [ADR-0002](adr/0002-vector-db-choice.md) (Superseded) →
    [ADR-0003](adr/0003-vector-db-choice-qdrant.md): scelto Qdrant.
-2. **Sample corpus**: scegliere un set di documenti pubblici (es. docs
-   ufficiale di una libreria open source) da usare come knowledge base demo.
+2. ✅ **Sample corpus**: scelto **i docs ufficiali di FastAPI**
+   (repo [`fastapi/fastapi`](https://github.com/fastapi/fastapi),
+   path `docs/en/docs/`, ~150 markdown). Vantaggi: stack coerente
+   col backend (demo "meta"), lessico tecnico denso ottimo per
+   stressare l'hybrid search, eval facile (il decisore conosce
+   il dominio). Licenza MIT. **Freshness strategy:** re-ingest
+   manuale on-demand via CLI (`uv run python -m app.ingest`);
+   un'automazione via CI/CD potrà essere valutata in M5.
 3. **Chunker** (`app/rag/chunker.py`): strategia token-based con overlap
    configurabile. Tipo `Chunk = {id, text, source, metadata}`.
 4. **Embedder** (`app/rag/embedder.py`): wrapper attorno a OpenAI
