@@ -54,6 +54,11 @@ dev = [
   # pytest: framework di testing standard nel mondo Python.
   # Equivalente concettuale: Vitest / Jest.
   "pytest>=8.0",
+  # pytest-asyncio: plugin che permette di scrivere `async def test_*` senza
+  # boilerplate. Configurato in "auto" mode (vedi [tool.pytest.ini_options])
+  # i test async vengono eseguiti automaticamente. Senza, ogni test async
+  # richiederebbe `asyncio.run(...)` esplicito.
+  "pytest-asyncio>=0.24",
   # httpx: client HTTP async. Usato da FastAPI.TestClient sotto il cofano.
   # In test puro non sempre serve esplicito, ma è buona norma metterlo per essere
   # sicuri che la versione sia controllata.
@@ -106,6 +111,10 @@ testpaths = ["tests"]
 # Pattern dei nomi: tutti i file `test_*.py` e funzioni `test_*`.
 # Verbose output di default per leggibilità.
 addopts = "-v"
+# pytest-asyncio in modalità "auto": qualunque funzione async def test_*
+# viene eseguita come coroutine. Senza, ogni test async richiederebbe il
+# decoratore `@pytest.mark.asyncio`.
+asyncio_mode = "auto"
 
 # -----------------------------------------------------------------------------
 # Sezione [build-system].
