@@ -120,19 +120,19 @@ al frontend, che lo consuma come una normale REST API.
    settings caricati da `.env` via `pydantic-settings`.
 3. ✅ **Health endpoint**: `GET /health` → `{"status": "ok", "version": "..."}`.
 4. ✅ **CORS**: configurato per accettare `FRONTEND_ORIGIN` dal `.env`.
-5. ⚪ **Structured JSON logging**: configurazione che produce log
-   leggibili in dev e parsabili in prod.
-6. ⚪ **Primo endpoint AI**: `POST /classify` → riceve `{text: string}`,
+5. ✅ **Structured JSON logging**: configurazione che produce log
+   leggibili in dev e parsabili in prod, con `request_id` propagato.
+6. ✅ **Primo endpoint AI**: `POST /classify` → riceve `{text: string}`,
    chiama Anthropic Claude (Haiku 4.5) con un prompt che chiede una
    categoria (es. `bug | feature | question | spam`), ritorna
    `{category, confidence, reasoning}`. Tipizzato con schemi Pydantic.
-7. 🟡 **Test suite**: pytest + `TestClient` per testare `/health`
-   (fatto) e `/classify` (con mock del client Anthropic — da fare).
+7. ✅ **Test suite**: pytest + `TestClient` per testare `/health`
+   e `/classify` (con mock del client Anthropic — 15 test totali).
 8. ✅ **Frontend pinger**: `apps/web/` scaffolded con Next.js, home page
    che mostra lo stato live di `/health` del backend.
 9. ⚪ **README di `apps/api/`**: aggiornare con istruzioni "come si avvia"
    complete + concetti chiave.
-10. ⚪ **Frontend playground per `/classify`**: nella home page Next.js,
+10. ✅ **Frontend playground per `/classify`**: nella home page Next.js,
     seconda card con textarea + bottone "Classify" + visualizzazione
     risultato. Stesso pattern di `HealthStatus` (Client Component con
     stati loading/ok/error).
@@ -142,16 +142,16 @@ al frontend, che lo consuma come una normale REST API.
 - [x] `cd apps/api && uv sync && uv run uvicorn app.main:app --reload`
       avvia il server su `localhost:8000`.
 - [x] `curl localhost:8000/health` → 200 con `{"status":"ok",...}`.
-- [ ] `curl -X POST localhost:8000/classify -H "Content-Type: application/json" -d '{"text":"...."}'`
+- [x] `curl -X POST localhost:8000/classify -H "Content-Type: application/json" -d '{"text":"...."}'`
       → 200 con `{category, confidence, reasoning}` plausibile.
-- [ ] `uv run pytest` → tutti verdi (incluso test su `/classify`).
+- [x] `uv run pytest` → tutti verdi (incluso test su `/classify`).
 - [x] `uv run ruff check . && uv run ruff format --check .` → clean.
 - [x] `localhost:8000/docs` mostra l'OpenAPI generato automaticamente.
 - [x] `cd apps/web && pnpm dev` avvia Next.js su `localhost:3000`, la home
       mostra lo stato `/health` del backend.
-- [ ] La home page del frontend ha anche un playground per `/classify`
+- [x] La home page del frontend ha anche un playground per `/classify`
       (textarea + bottone + risultato).
-- [ ] Log strutturati JSON in apps/api visibili a stdout in formato
+- [x] Log strutturati JSON in apps/api visibili a stdout in formato
       umano in dev, JSON puro in prod.
 
 ## Concetti chiave da studiare
