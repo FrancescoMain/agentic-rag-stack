@@ -7,5 +7,19 @@ importare dal sotto-modulo specifico. Pattern equivalente al
 """
 
 from app.rag.chunker import Chunk, ChunkerConfig, chunk_markdown
+from app.rag.embedder import (
+    EmbedderConfig,
+    EmbedderError,
+    EmbeddingResult,
+    embed_texts,
+)
 
-__all__ = ["Chunk", "ChunkerConfig", "chunk_markdown"]
+__all__ = [
+    "Chunk",
+    "ChunkerConfig",
+    "EmbedderConfig",
+    "EmbedderError",
+    "EmbeddingResult",
+    "chunk_markdown",
+    "embed_texts",
+]

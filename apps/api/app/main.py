@@ -69,6 +69,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 # In termini Express: equivalente del package `cors`.
 from fastapi.middleware.cors import CORSMiddleware
 
+# OpenAI SDK: client async per chiamare i modelli OpenAI (embeddings
+# via text-embedding-3-small, vedi ADR-0004; potenzialmente altri
+# modelli in futuro). Stesso pattern d'uso di AsyncAnthropic.
+from openai import AsyncOpenAI
+
 # Pydantic BaseModel + Field per schemi I/O tipizzati e validati.
 from pydantic import BaseModel, Field, ValidationError
 
@@ -120,19 +125,26 @@ def _read_version() -> str:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging(level=settings.log_level, fmt=settings.log_format)
 
-    # Creiamo il client Anthropic UNA volta all'avvio (se la chiave è
-    # configurata). Lo memorizziamo su `app.state`, attributo "borsa"
+    # Creiamo i client SDK UNA volta all'avvio (se le chiavi sono
+    # configurate). Li memorizziamo su `app.state`, attributo "borsa"
     # che FastAPI/Starlette espone proprio per condividere oggetti
-    # con il ciclo di vita dell'applicazione. La dependency
-    # `get_anthropic_client` (sotto) lo legge da lì.
+    # con il ciclo di vita dell'applicazione. Le dependency
+    # `get_anthropic_client` / `get_openai_client` (sotto) li leggono
+    # da lì.
     #
-    # Senza chiave configurata, `app.state.anthropic` resta None: il
-    # backend continua a funzionare per /health, ma /classify risponde
-    # 503 ("Service Unavailable") finché non c'è la chiave.
+    # Senza chiave configurata, il client corrispondente resta None:
+    # il backend continua a funzionare per /health, ma gli endpoint
+    # che richiedono quel client rispondono 503 ("Service Unavailable")
+    # finché la chiave non viene fornita.
     if settings.anthropic_api_key:
         app.state.anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
     else:
         app.state.anthropic = None
+
+    if settings.openai_api_key:
+        app.state.openai = AsyncOpenAI(api_key=settings.openai_api_key)
+    else:
+        app.state.openai = None
 
     logger.info(
         "backend_starting",
@@ -141,13 +153,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "version": app.version,
             "log_format": settings.log_format,
             "anthropic_configured": app.state.anthropic is not None,
+            "openai_configured": app.state.openai is not None,
         },
     )
     yield  # <-- l'app è "viva" mentre siamo bloccati qui
 
-    # Shutdown: chiudiamo il client per liberare le connessioni HTTP del pool.
+    # Shutdown: chiudiamo i client per liberare le connessioni HTTP del pool.
     if app.state.anthropic is not None:
         await app.state.anthropic.close()
+    if app.state.openai is not None:
+        await app.state.openai.close()
     logger.info("backend_shutdown")
 
 
@@ -357,6 +372,30 @@ def get_anthropic_client(request: Request) -> AsyncAnthropic:
             status_code=503,
             detail=(
                 "ANTHROPIC_API_KEY non configurata sul server. "
+                "Aggiungila al file .env nella root del repo e riavvia."
+            ),
+        )
+    return client
+
+
+def get_openai_client(request: Request) -> AsyncOpenAI:
+    """Restituisce il client OpenAI configurato per questa app.
+
+    Specchio di `get_anthropic_client`. Usato dagli endpoint / servizi
+    che fanno embedding (vedi `app/rag/embedder.py`). Per ora non c'è
+    un endpoint HTTP che lo richiede direttamente (l'embedder è
+    interno alla pipeline RAG), ma esponiamo la dependency in modo da
+    poterlo iniettare quando in M2 #6 / M3 ci servirà.
+
+    Raises:
+        HTTPException 503: se OPENAI_API_KEY non è configurata.
+    """
+    client = getattr(request.app.state, "openai", None)
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "OPENAI_API_KEY non configurata sul server. "
                 "Aggiungila al file .env nella root del repo e riavvia."
             ),
         )

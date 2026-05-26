@@ -9,6 +9,7 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "fastapi" },
+    { name = "openai" },
     { name = "pydantic-settings" },
     { name = "tiktoken" },
     { name = "uvicorn", extra = ["standard"] },
@@ -26,6 +27,7 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "openai", specifier = ">=1.50.0" },
     { name = "pydantic-settings", specifier = ">=2.5.0" },
     { name = "tiktoken", specifier = ">=0.7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
@@ -387,6 +389,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/95/a06692b29e77473f286e1ec1f426d3ca44d7b5843be8ad21d7a5f3fcdcc0/jiter-0.15.0-graalpy312-graalpy250_312_native-macosx_11_0_arm64.whl", hash = "sha256:b6c0ffae686c39bf3737be60793783267628783ea42545632c10b291105aee45", size = 305128, upload-time = "2026-05-19T10:09:43.657Z" },
     { url = "https://files.pythonhosted.org/packages/23/85/7270d7ad41d6061a25b950c6bf91d638bd9aacb113200a8c8d57a055fd67/jiter-0.15.0-graalpy312-graalpy250_312_native-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1d54fb5b31dea401a41af3f8a7d2512e9b6a6a005491e6166c7e4ffab9639a9c", size = 340459, upload-time = "2026-05-19T10:09:45.452Z" },
     { url = "https://files.pythonhosted.org/packages/c8/8d/302cb2057b7513327b4d575cff6b1d066ee6431a5357fc3f8867cd684406/jiter-0.15.0-graalpy312-graalpy250_312_native-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:54d5d6090cdc1b7c9e780dfb04949a990adb1e301a2fc0bbcee7de4638d33f9a", size = 344469, upload-time = "2026-05-19T10:09:46.864Z" },
+]
+
+[[package]]
+name = "openai"
+version = "2.38.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "jiter" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/12/cfa322c5f5dd8fa21aab9a7a8e979e7a11123800f86ca8d82eb68a83d213/openai-2.38.0.tar.gz", hash = "sha256:798694c6cf74145541fda94325b6f8f72d8e1fd0262cc137c8d728177a6a4ce3", size = 772764, upload-time = "2026-05-21T21:23:42.105Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0a/bf/ccff9be562e24207716d04ef9dc931c76aff0c89a7265da43e2104d7fe06/openai-2.38.0-py3-none-any.whl", hash = "sha256:ec6661c57b2dcc47414a767e6e3335c7ed3d19c9696999283a3c82e95c756a3c", size = 1344910, upload-time = "2026-05-21T21:23:39.636Z" },
 ]
 
 [[package]]
@@ -799,6 +820,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/96/d9/dfd086aa2d918c563a140720e0ce296cada1634efd2783d5cf51e05f984e/tiktoken-0.13.0-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:6644c9c2b5cf3916f5a3641d7d12fdb3f006a7b3d9ff6acdaec44e29ab1ff91e", size = 1181863, upload-time = "2026-05-15T04:51:15.025Z" },
     { url = "https://files.pythonhosted.org/packages/2f/68/a18b4f307086954fdae32714cb4f85562e34f9d34ab206e61f1816aa6018/tiktoken-0.13.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:5cb65b60b9408563676d874a3a4ee573370066f0dc4e29d84e82e989c6517424", size = 1239218, upload-time = "2026-05-15T04:51:16.103Z" },
     { url = "https://files.pythonhosted.org/packages/16/5b/f2aa703a4fc5d2dff73460a7d46cc2f3f44aa0f3dd8eeb20d2a0ecf68862/tiktoken-0.13.0-cp314-cp314t-win_amd64.whl", hash = "sha256:85b78cc3a2c3d48723ca751fa981f1fedccd54194ca0471b957364353a898b07", size = 918110, upload-time = "2026-05-15T04:51:17.237Z" },
+]
+
+[[package]]
+name = "tqdm"
+version = "4.67.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz", hash = "sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb", size = 169598, upload-time = "2026-02-03T17:35:53.048Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl", hash = "sha256:ee1e4c0e59148062281c49d80b25b67771a127c85fc9676d3be5f243206826bf", size = 78374, upload-time = "2026-02-03T17:35:50.982Z" },
 ]
 
 [[package]]

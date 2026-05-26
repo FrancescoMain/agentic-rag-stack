@@ -47,6 +47,11 @@ dependencies = [
   # davvero — invece di approssimare con caratteri o parole. Encoding
   # `cl100k_base` (GPT-4, text-embedding-3-*) è il default 2026.
   "tiktoken>=0.7",
+  # openai: SDK Python ufficiale di OpenAI. Lo usiamo per chiamare
+  # text-embedding-3-small (vedi ADR-0004). Stesso pattern di anthropic:
+  # client async, retry built-in, type-hinted. Versione 1.50+ ha l'API
+  # moderna stabile (client.embeddings.create, AsyncOpenAI).
+  "openai>=1.50.0",
 ]
 
 # -----------------------------------------------------------------------------

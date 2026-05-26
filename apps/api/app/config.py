@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     # controllano esplicitamente e rispondono 503 se manca.
     anthropic_api_key: str = Field(default="")
 
+    # Chiave API OpenAI, usata per text-embedding-3-small (vedi ADR-0004)
+    # e potenzialmente per altri modelli OpenAI in milestone successive.
+    # Stesso pattern di anthropic_api_key: default "" così il backend
+    # parte anche senza, gli endpoint che la richiedono rispondono 503.
+    openai_api_key: str = Field(default="")
+
     # SettingsConfigDict configura il comportamento del loader:
     #   env_file: path ASSOLUTO del .env da caricare (vedi _REPO_ROOT sopra).
     #   env_file_encoding: come leggerlo (utf-8 sempre sicuro).

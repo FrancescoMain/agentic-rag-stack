@@ -207,8 +207,11 @@ in vettori, recuperarli con accuratezza, ed esporre un endpoint
    Tipo `Chunk = {id, text, source, heading, position, token_count}`.
    Default 500/50 token. ID deterministico (sha256) per upsert
    idempotente in Qdrant. 13 test verdi.
-4. **Embedder** (`app/rag/embedder.py`): wrapper attorno a OpenAI
-   `text-embedding-3-small` con batch + retry. Scelta motivata in
+4. ✅ **Embedder** (`app/rag/embedder.py`): wrapper async attorno a
+   OpenAI `text-embedding-3-small`. Batching automatico (default 100),
+   retry exponential backoff su 429/timeout/5xx, fail-fast su auth.
+   `EmbeddingResult` Pydantic con vector+token_count.
+   10 test verdi (OpenAI mockato). Scelta motivata in
    [ADR-0004](adr/0004-embedding-model-choice.md).
 5. **Vector store client** (`app/rag/vector_store.py`): abstract base
    class + implementazione concreta (Pinecone o pgvector secondo ADR).
