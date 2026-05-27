@@ -21,8 +21,17 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from typer.testing import CliRunner
 
-from app.ingest import IngestStats, ingest_file, load_markdown_files, resolve_source
+from app.ingest import (
+    IngestStats,
+    ingest_file,
+    load_markdown_files,
+    resolve_source,
+)
+from app.ingest import (
+    app as ingest_app,
+)
 
 # ---------------------------------------------------------------------------
 # Unit: resolve_source
@@ -217,3 +226,33 @@ async def test_ingest_file_empty_raises(qdrant_store, fake_openai, tmp_path) -> 
             )
     finally:
         await qdrant_store.delete_collection(collection)
+
+
+# ---------------------------------------------------------------------------
+# CLI surface (typer CliRunner)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_help_does_not_crash() -> None:
+    """--help mostra la signature documentata."""
+    runner = CliRunner()
+    result = runner.invoke(ingest_app, ["--help"])
+    assert result.exit_code == 0
+    assert "Ingest a markdown corpus" in result.stdout
+
+
+def test_cli_missing_source_fails(tmp_path: Path) -> None:
+    """Senza --source typer alza errore di argomento."""
+    runner = CliRunner()
+    result = runner.invoke(ingest_app, [])
+    assert result.exit_code != 0
+
+
+def test_cli_invalid_source_exits_2(tmp_path: Path) -> None:
+    """--source verso path inesistente → exit 2 con messaggio chiaro."""
+    runner = CliRunner()
+    missing = tmp_path / "does-not-exist"
+    result = runner.invoke(ingest_app, ["--source", str(missing)])
+    assert result.exit_code == 2
+    combined = (result.stderr or "") + (result.stdout or "")
+    assert "Configuration error" in combined

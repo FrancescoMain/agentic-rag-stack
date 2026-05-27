@@ -16,6 +16,7 @@ Vedi il design doc per le scelte:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import subprocess
@@ -23,13 +24,16 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Annotated
 
+import typer
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.rag.chunker import chunk_markdown
 from app.rag.embedder import embed_texts
-from app.rag.vector_store import VectorPoint, VectorStore
+from app.rag.vector_store import VectorPoint, VectorStore, get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -196,3 +200,149 @@ async def ingest_file(
         chunks=len(chunks),
         tokens=sum(c.token_count for c in chunks),
     )
+
+
+# ---------------------------------------------------------------------------
+# Orchestratore async (dep-injection friendly per i test)
+# ---------------------------------------------------------------------------
+
+
+async def _run(
+    source: str,
+    collection: str,
+    strict: bool,
+    repo_subpath: str | None,
+    store: VectorStore | None = None,
+    openai_client: AsyncOpenAI | None = None,
+) -> list[IngestStats]:
+    """Pipeline di ingestione completa. Restituisce le stats per file.
+
+    Args:
+        source: path locale o URL git.
+        collection: nome collection Qdrant.
+        strict: se True, fail-fast al primo errore. Se False, log warn + skip.
+        repo_subpath: solo per source URL.
+        store: opzionale, default `get_vector_store()`. Iniettabile per test.
+        openai_client: opzionale, default `AsyncOpenAI(api_key=...)`.
+
+    Returns:
+        Lista di IngestStats (uno per file processato).
+
+    Raises:
+        ValueError: se OpenAI key mancante, source path invalido, ecc.
+        Exception: in modalità strict, re-raise del primo errore per-file.
+    """
+    if store is None:
+        store = get_vector_store()
+    if openai_client is None:
+        if not settings.openai_api_key:
+            raise ValueError("OPENAI_API_KEY non configurata. Imposta la variabile nel file .env.")
+        openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+    all_stats: list[IngestStats] = []
+    with resolve_source(source, repo_subpath=repo_subpath) as root:
+        files = load_markdown_files(root)
+        if not files:
+            logger.warning("ingest_no_files_found", extra={"root": str(root)})
+            return []
+
+        logger.info(
+            "ingest_start",
+            extra={"files": len(files), "collection": collection, "root": str(root)},
+        )
+
+        # Crea la collection (idempotente).
+        await store.ensure_collection(collection, vector_size=1536, distance="Cosine")
+
+        for path in files:
+            try:
+                stats = await ingest_file(
+                    path=path,
+                    source_root=root,
+                    store=store,
+                    openai_client=openai_client,
+                    collection=collection,
+                )
+                all_stats.append(stats)
+            except Exception as exc:
+                if strict:
+                    raise
+                rel = str(path.relative_to(root)).replace("\\", "/")
+                logger.warning(
+                    "ingest_file_skipped",
+                    extra={"file": rel, "reason": str(exc)},
+                )
+                all_stats.append(IngestStats(file=rel, chunks=0, tokens=0, skipped_reason=str(exc)))
+
+    return all_stats
+
+
+# ---------------------------------------------------------------------------
+# typer entry point
+# ---------------------------------------------------------------------------
+
+app = typer.Typer(
+    add_completion=False,
+    help="Ingest a markdown corpus into the Qdrant vector store.",
+)
+
+
+@app.command()
+def main(
+    source: Annotated[
+        str,
+        typer.Option(
+            "--source",
+            help="Path locale o URL git del corpus markdown.",
+        ),
+    ],
+    collection: Annotated[
+        str | None,
+        typer.Option(
+            "--collection",
+            help="Nome della collection Qdrant. Default: settings.qdrant_collection_name.",
+        ),
+    ] = None,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Fail-fast al primo errore (default: skip + summary).",
+        ),
+    ] = False,
+    repo_subpath: Annotated[
+        str | None,
+        typer.Option(
+            "--repo-subpath",
+            help="Solo per --source URL: sub-path dentro al repo (es. docs/en/docs).",
+        ),
+    ] = None,
+) -> None:
+    """Ingest a markdown corpus into Qdrant."""
+    coll = collection or settings.qdrant_collection_name
+
+    try:
+        stats = asyncio.run(_run(source, coll, strict, repo_subpath))
+    except ValueError as exc:
+        # Configurazione invalida (source path / OpenAI key) → exit 2.
+        typer.echo(f"Configuration error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    # Summary
+    ingested = [s for s in stats if s.skipped_reason is None]
+    skipped = [s for s in stats if s.skipped_reason is not None]
+
+    typer.echo("─" * 50)
+    typer.echo(f"✓ {len(ingested)} files ingested ({len(skipped)} skipped)")
+    typer.echo(
+        f"  {sum(s.chunks for s in ingested)} chunks, {sum(s.tokens for s in ingested):,} tokens"
+    )
+    typer.echo("─" * 50)
+    if skipped:
+        typer.echo("Skipped:")
+        for s in skipped:
+            typer.echo(f"  - {s.file}: {s.skipped_reason}")
+
+
+if __name__ == "__main__":
+    app()
