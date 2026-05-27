@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.ingest import resolve_source
+from app.ingest import load_markdown_files, resolve_source
 
 # ---------------------------------------------------------------------------
 # Unit: resolve_source
@@ -91,3 +91,59 @@ def test_resolve_source_windows_path_not_url() -> None:
     with pytest.raises(ValueError, match="non è una directory"):
         with resolve_source("C:\\non-esiste-davvero"):
             pass  # pragma: no cover
+
+
+# ---------------------------------------------------------------------------
+# Unit: load_markdown_files
+# ---------------------------------------------------------------------------
+
+
+def test_load_markdown_files_glob_recursive(tmp_path: Path) -> None:
+    """Glob ricorsivo su **/*.md."""
+    (tmp_path / "a.md").write_text("# A")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "b.md").write_text("# B")
+    (tmp_path / "sub" / "c.md").write_text("# C")
+
+    found = load_markdown_files(tmp_path)
+    names = sorted(p.name for p in found)
+    assert names == ["a.md", "b.md", "c.md"]
+
+
+def test_load_markdown_files_ignores_non_md(tmp_path: Path) -> None:
+    """File non-.md vengono ignorati."""
+    (tmp_path / "doc.md").write_text("# md")
+    (tmp_path / "readme.txt").write_text("txt")
+    (tmp_path / "code.py").write_text("py")
+
+    found = load_markdown_files(tmp_path)
+    assert len(found) == 1
+    assert found[0].name == "doc.md"
+
+
+def test_load_markdown_files_excludes_hidden_and_build_dirs(tmp_path: Path) -> None:
+    """Skip .git/, node_modules/, __pycache__/, .venv/."""
+    (tmp_path / "kept.md").write_text("ok")
+
+    for excluded in (".git", "node_modules", "__pycache__", ".venv"):
+        (tmp_path / excluded).mkdir()
+        (tmp_path / excluded / "inside.md").write_text("excluded")
+
+    found = load_markdown_files(tmp_path)
+    names = [p.name for p in found]
+    assert names == ["kept.md"]
+
+
+def test_load_markdown_files_sorted_deterministic(tmp_path: Path) -> None:
+    """Risultato ordinato per str(path)."""
+    for name in ["zzz.md", "aaa.md", "mmm.md"]:
+        (tmp_path / name).write_text("x")
+
+    found = load_markdown_files(tmp_path)
+    names = [p.name for p in found]
+    assert names == sorted(names)
+
+
+def test_load_markdown_files_empty_dir_returns_empty(tmp_path: Path) -> None:
+    """Directory senza .md → lista vuota, no errore."""
+    assert load_markdown_files(tmp_path) == []

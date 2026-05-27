@@ -68,3 +68,26 @@ def resolve_source(source: str, repo_subpath: str | None = None) -> Iterator[Pat
         if not path.is_dir():
             raise ValueError(f"source '{source}' non è una directory esistente")
         yield path
+
+
+# Directory che escludiamo dal glob: convenzionalmente "rumore" sotto un
+# repo (controllo versione, dipendenze, cache, virtualenv). Set per
+# lookup O(1) durante il filtraggio.
+_EXCLUDED_DIRS = frozenset({".git", "node_modules", "__pycache__", ".venv"})
+
+
+def load_markdown_files(root: Path) -> list[Path]:
+    """Glob `**/*.md` ricorsivo su `root`, ordinato per path stringa.
+
+    Esclude file dentro a `.git/`, `node_modules/`, `__pycache__/`, `.venv/`
+    (rumore tipico in un repo clonato).
+
+    Args:
+        root: directory radice da cui partire.
+
+    Returns:
+        Lista ordinata di Path ai file .md. Vuota se nessun match.
+    """
+    all_md = root.rglob("*.md")
+    filtered = [p for p in all_md if not any(part in _EXCLUDED_DIRS for part in p.parts)]
+    return sorted(filtered, key=str)
