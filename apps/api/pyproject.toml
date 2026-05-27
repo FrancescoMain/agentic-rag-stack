@@ -52,6 +52,12 @@ dependencies = [
   # client async, retry built-in, type-hinted. Versione 1.50+ ha l'API
   # moderna stabile (client.embeddings.create, AsyncOpenAI).
   "openai>=1.50.0",
+  # qdrant-client: client ufficiale per Qdrant (vector DB scelto in ADR-0003).
+  # Versione 1.11.x allinea l'API client con l'immagine docker qdrant/qdrant:v1.11.0.
+  # Forniamo sia QdrantClient sync sia AsyncQdrantClient — usiamo l'async per
+  # coerenza con FastAPI/embedder. Il pacchetto include i tipi: VectorParams,
+  # Distance, PointStruct, Filter, FieldCondition, MatchValue, ScoredPoint.
+  "qdrant-client>=1.11,<2",
 ]
 
 # -----------------------------------------------------------------------------
@@ -126,6 +132,13 @@ addopts = "-v"
 # viene eseguita come coroutine. Senza, ogni test async richiederebbe il
 # decoratore `@pytest.mark.asyncio`.
 asyncio_mode = "auto"
+# Marker custom per test che richiedono servizi esterni (Qdrant, ecc.).
+# Skippati di default se il servizio non è raggiungibile (vedi conftest fixture).
+# Per girare solo gli integration: `uv run pytest -m integration`
+# Per girare TUTTO tranne gli integration: `uv run pytest -m "not integration"`
+markers = [
+  "integration: test che richiede un servizio esterno live (es. Qdrant)",
+]
 
 # -----------------------------------------------------------------------------
 # Sezione [build-system].

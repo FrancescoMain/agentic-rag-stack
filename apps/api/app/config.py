@@ -104,6 +104,24 @@ class Settings(BaseSettings):
     # parte anche senza, gli endpoint che la richiedono rispondono 503.
     openai_api_key: str = Field(default="")
 
+    # ------------------------------------------------------------------------
+    # Vector database (M2 — vedi ADR-0003 Qdrant)
+    # ------------------------------------------------------------------------
+    # URL del Qdrant locale lanciato via `docker compose up -d qdrant`.
+    # In prod cambierà a Qdrant Cloud o a un'istanza self-hosted in cluster.
+    qdrant_url: str = Field(default="http://localhost:6333")
+
+    # API key per autenticare le query verso Qdrant. In dev locale Qdrant
+    # gira senza auth (vedi docker-compose.yml), quindi può restare vuota.
+    # La imposteremo a M5 / prod.
+    qdrant_api_key: str = Field(default="")
+
+    # Nome di default della collezione usata dall'ingest CLI (M2 task #6) e
+    # dal retriever (task #7). Il vector store stesso NON usa questo campo:
+    # accetta `collection: str` per chiamata. Lo mettiamo qui per coerenza
+    # con .env / .env.example, dove la chiave QDRANT_COLLECTION_NAME esiste.
+    qdrant_collection_name: str = Field(default="agentic-rag-demo")
+
     # SettingsConfigDict configura il comportamento del loader:
     #   env_file: path ASSOLUTO del .env da caricare (vedi _REPO_ROOT sopra).
     #   env_file_encoding: come leggerlo (utf-8 sempre sicuro).
