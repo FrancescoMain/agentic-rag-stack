@@ -326,6 +326,41 @@ class QdrantVectorStore:
         await self._client.delete_collection(name)
         logger.info("delete_collection_done", extra={"collection": name})
 
+    # Soglia di batching interna. Coerente con l'embedder (batch_size=100).
+    # Qdrant accetta upsert più grandi, ma 100 è uno sweet spot fra throughput
+    # (meno round-trip) e robustezza (payload più piccolo → timeout più rari).
+    _UPSERT_BATCH_SIZE = 100
+
+    async def upsert(
+        self,
+        collection: str,
+        points: Sequence[VectorPoint],
+    ) -> int:
+        """Insert/update di punti. Idempotente per id (overwrite su collisione).
+
+        Batching interno a chunk di 100 per chiamata; il consumer non se ne
+        accorge — vede una singola operazione.
+        """
+        if not points:
+            return 0
+
+        total = 0
+        for start in range(0, len(points), self._UPSERT_BATCH_SIZE):
+            batch = points[start : start + self._UPSERT_BATCH_SIZE]
+            qdrant_points = [_to_qdrant_point(p) for p in batch]
+            await self._client.upsert(collection_name=collection, points=qdrant_points)
+            total += len(batch)
+
+        logger.info(
+            "upsert_done",
+            extra={
+                "collection": collection,
+                "total_points": total,
+                "batches": (len(points) + self._UPSERT_BATCH_SIZE - 1) // self._UPSERT_BATCH_SIZE,
+            },
+        )
+        return total
+
     # -----------------------------------------------------------------------
     # Helpers privati
     # -----------------------------------------------------------------------

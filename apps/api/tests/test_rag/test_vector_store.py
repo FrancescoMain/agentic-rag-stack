@@ -253,3 +253,69 @@ async def test_ensure_collection_invalid_distance_raises(qdrant_store, unique_co
     """Distance non supportata → ValueError prima di toccare Qdrant."""
     with pytest.raises(ValueError, match="Distance"):
         await qdrant_store.ensure_collection(unique_collection, vector_size=4, distance="Manhattan")
+
+
+@pytest.mark.integration
+async def test_upsert_returns_count(qdrant_store, unique_collection) -> None:
+    """upsert ritorna il numero di punti inviati."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    points = [
+        VectorPoint(id="a", vector=[1.0, 0.0, 0.0, 0.0], payload={"text": "alfa"}),
+        VectorPoint(id="b", vector=[0.0, 1.0, 0.0, 0.0], payload={"text": "beta"}),
+        VectorPoint(id="c", vector=[0.0, 0.0, 1.0, 0.0], payload={"text": "gamma"}),
+    ]
+    n = await qdrant_store.upsert(unique_collection, points)
+    assert n == 3
+    # Verifica indiretta che i 3 punti siano davvero presenti.
+    count_resp = await qdrant_store._client.count(unique_collection, exact=True)
+    assert count_resp.count == 3
+
+
+@pytest.mark.integration
+async def test_upsert_empty_list_returns_zero(qdrant_store, unique_collection) -> None:
+    """upsert di lista vuota → 0, niente errore, niente call."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    n = await qdrant_store.upsert(unique_collection, [])
+    assert n == 0
+
+
+@pytest.mark.integration
+async def test_upsert_same_id_overwrites(qdrant_store, unique_collection) -> None:
+    """Re-upsert dello stesso id con vector diverso → il vecchio è soppiantato."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    await qdrant_store.upsert(
+        unique_collection,
+        [VectorPoint(id="x", vector=[1.0, 0.0, 0.0, 0.0], payload={"v": "old"})],
+    )
+    await qdrant_store.upsert(
+        unique_collection,
+        [VectorPoint(id="x", vector=[0.0, 1.0, 0.0, 0.0], payload={"v": "new"})],
+    )
+    # Verifica via count: deve esserci UN solo punto (idempotente per id).
+    count_resp = await qdrant_store._client.count(unique_collection, exact=True)
+    assert count_resp.count == 1
+    # Verifica via scroll: il payload deve essere "new", non "old".
+    points, _ = await qdrant_store._client.scroll(unique_collection, limit=10, with_payload=True)
+    assert len(points) == 1
+    assert points[0].payload["v"] == "new"
+
+
+@pytest.mark.integration
+async def test_upsert_batches_over_100(qdrant_store, unique_collection) -> None:
+    """upsert di 250 punti viene batchato in 3 chiamate (100+100+50) ma il
+    risultato è transparente al consumer: tutti i punti devono essere
+    presenti."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    points = [
+        VectorPoint(
+            id=f"p{i:03d}",
+            vector=[float(i % 4 == 0), float(i % 4 == 1), float(i % 4 == 2), float(i % 4 == 3)],
+            payload={"i": i},
+        )
+        for i in range(250)
+    ]
+    n = await qdrant_store.upsert(unique_collection, points)
+    assert n == 250
+    # Verifica via count: 250 punti distinti devono esserci.
+    count_resp = await qdrant_store._client.count(unique_collection, exact=True)
+    assert count_resp.count == 250
