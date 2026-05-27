@@ -404,7 +404,29 @@ class QdrantVectorStore:
 # ---------------------------------------------------------------------------
 # Factory singleton
 # ---------------------------------------------------------------------------
-# (Implementato nelle task successive.)
+# Pattern coerente con `app.config.settings`: istanza modulo-livello creata
+# alla prima chiamata e riusata. AsyncQdrantClient è progettato per essere
+# long-lived (gestisce internamente un pool httpx); ricrearlo per ogni
+# request sarebbe wasteful.
+
+_vector_store_singleton: QdrantVectorStore | None = None
+
+
+def get_vector_store() -> QdrantVectorStore:
+    """Ritorna l'istanza singleton di QdrantVectorStore.
+
+    Usa `app.config.settings` per URL e API key. Pensato per essere usato
+    con `Depends(get_vector_store)` da endpoint FastAPI (dal task #10 in poi).
+    """
+    global _vector_store_singleton
+    if _vector_store_singleton is None:
+        from app.config import settings  # import lazy: evita ciclo all'avvio
+
+        _vector_store_singleton = QdrantVectorStore(
+            url=settings.qdrant_url,
+            api_key=settings.qdrant_api_key or None,
+        )
+    return _vector_store_singleton
 
 
 __all__ = [
@@ -412,4 +434,5 @@ __all__ = [
     "QdrantVectorStore",
     "VectorPoint",
     "VectorStore",
+    "get_vector_store",
 ]

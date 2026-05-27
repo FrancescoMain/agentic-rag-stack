@@ -213,8 +213,14 @@ in vettori, recuperarli con accuratezza, ed esporre un endpoint
    `EmbeddingResult` Pydantic con vector+token_count.
    10 test verdi (OpenAI mockato). Scelta motivata in
    [ADR-0004](adr/0004-embedding-model-choice.md).
-5. **Vector store client** (`app/rag/vector_store.py`): abstract base
-   class + implementazione concreta (Pinecone o pgvector secondo ADR).
+5. ✅ **Vector store client** (`app/rag/vector_store.py`): Protocol
+   `VectorStore` (typing.Protocol — duck typing strutturale) +
+   implementazione concreta `QdrantVectorStore` su `AsyncQdrantClient`.
+   Metodi: `ensure_collection` (idempotente, ValueError su size mismatch),
+   `upsert` (batching interno 100/call, idempotente per id),
+   `search` (top-k + filter shallow AND), `delete_collection`.
+   Singleton via `get_vector_store()`. 33 test verdi (17 unit + 16
+   integration su Qdrant live).
 6. **Ingestion CLI** (`app/ingest.py`): `uv run python -m app.ingest --source ./sample_docs --collection demo`
    — orchestra load → chunk → embed → upsert.
 7. **Retriever** (`app/rag/retriever.py`): hybrid search = vector + BM25

@@ -431,3 +431,18 @@ async def test_search_returns_match_with_original_id(qdrant_store, unique_collec
     assert results[0].id == original_id
     # E non deve trapelare la chiave riservata:
     assert "__vp_id" not in results[0].payload
+
+
+# ---------------------------------------------------------------------------
+# Factory singleton
+# ---------------------------------------------------------------------------
+
+
+def test_get_vector_store_is_singleton() -> None:
+    """Due chiamate a get_vector_store ritornano la stessa istanza."""
+    from app.rag.vector_store import QdrantVectorStore, get_vector_store
+
+    a = get_vector_store()
+    b = get_vector_store()
+    assert a is b
+    assert isinstance(a, QdrantVectorStore)
