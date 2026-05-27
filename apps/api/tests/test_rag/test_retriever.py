@@ -17,7 +17,7 @@ import uuid
 
 import pytest
 
-from app.rag.retriever import Retriever
+from app.rag.retriever import Retriever, get_retriever
 from app.rag.vector_store import VectorPoint
 
 # ---------------------------------------------------------------------------
@@ -212,3 +212,30 @@ async def test_retrieve_match_id_is_original_not_uuid(qdrant_store, fake_openai)
         assert "__vp_id" not in result[0].payload
     finally:
         await qdrant_store.delete_collection(collection)
+
+
+# ---------------------------------------------------------------------------
+# Singleton get_retriever()
+# ---------------------------------------------------------------------------
+
+
+def test_get_retriever_is_singleton(monkeypatch) -> None:
+    """Due chiamate ritornano la stessa istanza."""
+    # Reset del singleton globale (altri test potrebbero averlo già creato).
+    monkeypatch.setattr("app.rag.retriever._retriever_singleton", None)
+    # Assicura che la key sia presente (settings carica da .env).
+    monkeypatch.setattr("app.config.settings.openai_api_key", "sk-test-fake")
+
+    a = get_retriever()
+    b = get_retriever()
+    assert a is b
+    assert isinstance(a, Retriever)
+
+
+def test_get_retriever_fails_without_openai_key(monkeypatch) -> None:
+    """OPENAI_API_KEY vuota → ValueError chiaro al primo get_retriever()."""
+    monkeypatch.setattr("app.rag.retriever._retriever_singleton", None)
+    monkeypatch.setattr("app.config.settings.openai_api_key", "")
+
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        get_retriever()

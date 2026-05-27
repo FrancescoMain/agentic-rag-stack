@@ -227,8 +227,17 @@ in vettori, recuperarli con accuratezza, ed esporre un endpoint
    Resilient di default (skip + summary), `--strict` per fail-fast.
    Idempotente (overwrite per chunk id). 24 test verdi (unit + integration
    + CLI surface). Smoke con OpenAI reale verificato.
-7. **Retriever** (`app/rag/retriever.py`): hybrid search = vector + BM25
-   (o full-text di Postgres), con metadata filters.
+7a. ✅ **Retriever (dense)** (`app/rag/retriever.py`): orchestratore
+    `embed_texts` + `vector_store.search`. Metadata filters via dict
+    shallow (AND fra chiavi). Singleton `get_retriever()`. 9 test verdi
+    (7 integration + 2 singleton unit). Smoke con OpenAI reale verificato:
+    query NL → top match coerenti col tema.
+7b. ⚪ **Retriever (hybrid sparse+dense+RRF)** — backlog. Da attivare
+    SOLO se l'eval (task #11-12) mostra che dense fallisce su query
+    lessicali (codici, identifier, version numbers). Richiederebbe:
+    dep `qdrant-client[fastembed]`, collection multi-vector, re-ingest,
+    breaking change vector_store. Vedi
+    [design #7a](superpowers/specs/2026-05-27-dense-retriever-design.md).
 8. **Reranker** (`app/rag/reranker.py`): wrapper Cohere `rerank-3` con
    fallback "no rerank" se non c'è chiave.
 9. **Citation builder** (`app/rag/citations.py`): trasforma chunk
