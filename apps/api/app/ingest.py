@@ -24,6 +24,13 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from openai import AsyncOpenAI
+from pydantic import BaseModel, Field
+
+from app.rag.chunker import chunk_markdown
+from app.rag.embedder import embed_texts
+from app.rag.vector_store import VectorPoint, VectorStore
+
 logger = logging.getLogger(__name__)
 
 
@@ -91,3 +98,101 @@ def load_markdown_files(root: Path) -> list[Path]:
     all_md = root.rglob("*.md")
     filtered = [p for p in all_md if not any(part in _EXCLUDED_DIRS for part in p.parts)]
     return sorted(filtered, key=str)
+
+
+# ---------------------------------------------------------------------------
+# DTO interni
+# ---------------------------------------------------------------------------
+
+
+class IngestStats(BaseModel):
+    """Statistiche di ingestione per un singolo file.
+
+    Attributes:
+        file: path relativo al source root (es. "tutorial/intro.md").
+        chunks: numero di chunk prodotti (0 se skipped).
+        tokens: somma dei token_count dei chunk (0 se skipped).
+        skipped_reason: None se ingestato; messaggio del motivo se skippato
+            (in modalità resilient). In modalità --strict il file fallito
+            propaga eccezione e non genera IngestStats.
+    """
+
+    file: str
+    chunks: int = Field(ge=0)
+    tokens: int = Field(ge=0)
+    skipped_reason: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Orchestratore per-file
+# ---------------------------------------------------------------------------
+
+
+async def ingest_file(
+    path: Path,
+    source_root: Path,
+    store: VectorStore,
+    openai_client: AsyncOpenAI,
+    collection: str,
+) -> IngestStats:
+    """Processa un singolo file markdown: chunk + embed + upsert.
+
+    Args:
+        path: path assoluto al file .md.
+        source_root: radice del corpus (usata per calcolare il `source`
+            relativo che finisce nel payload di Qdrant).
+        store: implementazione di VectorStore (es. QdrantVectorStore).
+        openai_client: client OpenAI async (reale o fake nei test).
+        collection: nome della collection Qdrant.
+
+    Returns:
+        IngestStats con counters. `skipped_reason` è sempre None qui — i
+        casi di skip sono propagati come eccezione e gestiti dal caller.
+
+    Raises:
+        ValueError: se il file è vuoto o non produce chunk dopo il chunking.
+        EmbedderError: se l'embedding fallisce dopo tutti i retry.
+        Eccezioni del vector_store: propagate.
+    """
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError(f"file is empty: {path}")
+
+    rel = str(path.relative_to(source_root)).replace("\\", "/")
+    chunks = chunk_markdown(text, source=rel)
+    if not chunks:
+        raise ValueError(f"file produced no chunks after chunking: {rel}")
+
+    embeddings = await embed_texts(openai_client, [c.text for c in chunks])
+
+    points = [
+        VectorPoint(
+            id=chunk.id,
+            vector=emb.vector,
+            payload={
+                "text": chunk.text,
+                "source": chunk.source,
+                "heading": chunk.heading,
+                "position": chunk.position,
+                "token_count": chunk.token_count,
+            },
+        )
+        for chunk, emb in zip(chunks, embeddings, strict=True)
+    ]
+
+    await store.upsert(collection, points)
+
+    logger.info(
+        "ingest_file_done",
+        extra={
+            "file": rel,
+            "chunks": len(chunks),
+            "tokens": sum(c.token_count for c in chunks),
+        },
+    )
+
+    return IngestStats(
+        file=rel,
+        chunks=len(chunks),
+        tokens=sum(c.token_count for c in chunks),
+    )

@@ -16,12 +16,13 @@ Marker:
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.ingest import load_markdown_files, resolve_source
+from app.ingest import IngestStats, ingest_file, load_markdown_files, resolve_source
 
 # ---------------------------------------------------------------------------
 # Unit: resolve_source
@@ -147,3 +148,72 @@ def test_load_markdown_files_sorted_deterministic(tmp_path: Path) -> None:
 def test_load_markdown_files_empty_dir_returns_empty(tmp_path: Path) -> None:
     """Directory senza .md → lista vuota, no errore."""
     assert load_markdown_files(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# Integration: ingest_file (Qdrant live + FakeOpenAIClient)
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_stats_basic() -> None:
+    """IngestStats Pydantic costruzione minima."""
+    s = IngestStats(file="a.md", chunks=3, tokens=120)
+    assert s.file == "a.md"
+    assert s.chunks == 3
+    assert s.tokens == 120
+    assert s.skipped_reason is None
+
+
+def test_ingest_stats_skipped() -> None:
+    """IngestStats con skipped_reason."""
+    s = IngestStats(file="b.md", chunks=0, tokens=0, skipped_reason="empty")
+    assert s.skipped_reason == "empty"
+
+
+@pytest.mark.integration
+async def test_ingest_file_happy_path(qdrant_store, fake_openai, tmp_path) -> None:
+    """Un singolo file markdown viene chunkato, embeddato e upsertato."""
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        await qdrant_store.ensure_collection(collection, vector_size=1536, distance="Cosine")
+
+        md = tmp_path / "doc.md"
+        md.write_text("# Title\n\nThis is a test paragraph.\n")
+
+        stats = await ingest_file(
+            path=md,
+            source_root=tmp_path,
+            store=qdrant_store,
+            openai_client=fake_openai,
+            collection=collection,
+        )
+
+        assert stats.file == "doc.md"
+        assert stats.chunks >= 1
+        assert stats.tokens > 0
+        assert stats.skipped_reason is None
+
+        count_resp = await qdrant_store._client.count(collection, exact=True)
+        assert count_resp.count == stats.chunks
+    finally:
+        await qdrant_store.delete_collection(collection)
+
+
+@pytest.mark.integration
+async def test_ingest_file_empty_raises(qdrant_store, fake_openai, tmp_path) -> None:
+    """File vuoto → ValueError (resilient/strict lo decide il caller)."""
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        await qdrant_store.ensure_collection(collection, vector_size=1536, distance="Cosine")
+        md = tmp_path / "empty.md"
+        md.write_text("")
+        with pytest.raises(ValueError, match="empty"):
+            await ingest_file(
+                path=md,
+                source_root=tmp_path,
+                store=qdrant_store,
+                openai_client=fake_openai,
+                collection=collection,
+            )
+    finally:
+        await qdrant_store.delete_collection(collection)
