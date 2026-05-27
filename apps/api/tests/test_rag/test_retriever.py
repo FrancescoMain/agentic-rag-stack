@@ -181,3 +181,34 @@ async def test_retrieve_whitespace_only_query_raises(qdrant_store, fake_openai) 
         assert fake_openai.calls == []
     finally:
         await qdrant_store.delete_collection(collection)
+
+
+@pytest.mark.integration
+async def test_retrieve_match_id_is_original_not_uuid(qdrant_store, fake_openai) -> None:
+    """Regression test del fix di task #5: Match.id deve essere l'id
+    ORIGINALE passato a VectorPoint, NON l'UUID v5 derivato interno
+    a Qdrant. E la chiave riservata __vp_id NON deve trapelare nel payload.
+    """
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        await qdrant_store.ensure_collection(collection, vector_size=1536, distance="Cosine")
+        retriever = Retriever(store=qdrant_store, openai_client=fake_openai)
+
+        original_id = "sha256-mock-not-actually-a-hash-abc123"
+        await qdrant_store.upsert(
+            collection,
+            [
+                VectorPoint(
+                    id=original_id,
+                    vector=fake_openai.vector_for("hi"),
+                    payload={"text": "hi"},
+                )
+            ],
+        )
+
+        result = await retriever.retrieve(query="hi", collection=collection, top_k=1)
+        assert len(result) == 1
+        assert result[0].id == original_id
+        assert "__vp_id" not in result[0].payload
+    finally:
+        await qdrant_store.delete_collection(collection)
