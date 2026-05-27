@@ -361,6 +361,27 @@ class QdrantVectorStore:
         )
         return total
 
+    async def search(
+        self,
+        collection: str,
+        query: list[float],
+        top_k: int = 5,
+        filter: dict[str, Any] | None = None,
+    ) -> list[Match]:
+        """Top-k semantic search. Filter shallow equality opzionale.
+
+        Usa `query_points` (endpoint unificato di Qdrant 1.10+) invece del
+        vecchio `search`. La response è un `QueryResponse` con `.points`.
+        """
+        qdrant_filter = _filter_to_qdrant(filter)
+        response = await self._client.query_points(
+            collection_name=collection,
+            query=query,
+            limit=top_k,
+            query_filter=qdrant_filter,
+        )
+        return [_from_qdrant_scored_point(sp) for sp in response.points]
+
     # -----------------------------------------------------------------------
     # Helpers privati
     # -----------------------------------------------------------------------

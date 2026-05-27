@@ -319,3 +319,115 @@ async def test_upsert_batches_over_100(qdrant_store, unique_collection) -> None:
     # Verifica via count: 250 punti distinti devono esserci.
     count_resp = await qdrant_store._client.count(unique_collection, exact=True)
     assert count_resp.count == 250
+
+
+@pytest.mark.integration
+async def test_search_empty_collection_returns_empty(qdrant_store, unique_collection) -> None:
+    """search su una collection vuota → []."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    results = await qdrant_store.search(unique_collection, query=[0.5] * 4, top_k=5)
+    assert results == []
+
+
+@pytest.mark.integration
+async def test_search_returns_top_k_ordered(qdrant_store, unique_collection) -> None:
+    """search ritorna top_k ordinato per score decrescente."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    # Tre punti: il primo è perfettamente vicino a [1,0,0,0], gli altri lontani.
+    points = [
+        VectorPoint(id="near", vector=[1.0, 0.0, 0.0, 0.0], payload={"text": "near"}),
+        VectorPoint(id="mid", vector=[0.7, 0.7, 0.0, 0.0], payload={"text": "mid"}),
+        VectorPoint(id="far", vector=[0.0, 0.0, 1.0, 0.0], payload={"text": "far"}),
+    ]
+    await qdrant_store.upsert(unique_collection, points)
+
+    results = await qdrant_store.search(unique_collection, query=[1.0, 0.0, 0.0, 0.0], top_k=3)
+    assert len(results) == 3
+    # "near" ha score max (cosine = 1.0 perfetto):
+    assert results[0].id == "near"
+    # Ordine decrescente:
+    assert results[0].score >= results[1].score >= results[2].score
+
+
+@pytest.mark.integration
+async def test_search_respects_top_k_limit(qdrant_store, unique_collection) -> None:
+    """top_k=1 → al massimo 1 risultato."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    points = [
+        VectorPoint(id=f"p{i}", vector=[1.0, 0.0, 0.0, 0.0], payload={"i": i}) for i in range(5)
+    ]
+    await qdrant_store.upsert(unique_collection, points)
+    results = await qdrant_store.search(unique_collection, query=[1.0, 0.0, 0.0, 0.0], top_k=1)
+    assert len(results) == 1
+
+
+@pytest.mark.integration
+async def test_search_with_filter_returns_only_matching(qdrant_store, unique_collection) -> None:
+    """Filter {source: X} → solo punti con payload[source]=X."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    points = [
+        VectorPoint(id="a", vector=[1.0, 0.0, 0.0, 0.0], payload={"source": "intro.md"}),
+        VectorPoint(id="b", vector=[1.0, 0.0, 0.0, 0.0], payload={"source": "intro.md"}),
+        VectorPoint(id="c", vector=[1.0, 0.0, 0.0, 0.0], payload={"source": "other.md"}),
+    ]
+    await qdrant_store.upsert(unique_collection, points)
+
+    results = await qdrant_store.search(
+        unique_collection,
+        query=[1.0, 0.0, 0.0, 0.0],
+        top_k=10,
+        filter={"source": "intro.md"},
+    )
+    assert len(results) == 2
+    assert all(r.payload["source"] == "intro.md" for r in results)
+    ids = sorted(r.id for r in results)
+    assert ids == ["a", "b"]
+
+
+@pytest.mark.integration
+async def test_search_with_filter_and_logic(qdrant_store, unique_collection) -> None:
+    """Filter con più chiavi → AND (deve matchare TUTTE le chiavi)."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    points = [
+        VectorPoint(
+            id="a",
+            vector=[1.0, 0.0, 0.0, 0.0],
+            payload={"source": "intro.md", "heading": "H1"},
+        ),
+        VectorPoint(
+            id="b",
+            vector=[1.0, 0.0, 0.0, 0.0],
+            payload={"source": "intro.md", "heading": "H2"},
+        ),
+        VectorPoint(
+            id="c",
+            vector=[1.0, 0.0, 0.0, 0.0],
+            payload={"source": "other.md", "heading": "H1"},
+        ),
+    ]
+    await qdrant_store.upsert(unique_collection, points)
+
+    results = await qdrant_store.search(
+        unique_collection,
+        query=[1.0, 0.0, 0.0, 0.0],
+        top_k=10,
+        filter={"source": "intro.md", "heading": "H1"},
+    )
+    assert len(results) == 1
+    assert results[0].id == "a"
+
+
+@pytest.mark.integration
+async def test_search_returns_match_with_original_id(qdrant_store, unique_collection) -> None:
+    """Match.id deve essere l'id ORIGINALE (sha256-like), non l'UUID Qdrant."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    original_id = "sha256-mock-not-actually-a-hash"
+    await qdrant_store.upsert(
+        unique_collection,
+        [VectorPoint(id=original_id, vector=[1.0, 0.0, 0.0, 0.0], payload={})],
+    )
+    results = await qdrant_store.search(unique_collection, query=[1.0, 0.0, 0.0, 0.0], top_k=1)
+    assert len(results) == 1
+    assert results[0].id == original_id
+    # E non deve trapelare la chiave riservata:
+    assert "__vp_id" not in results[0].payload
