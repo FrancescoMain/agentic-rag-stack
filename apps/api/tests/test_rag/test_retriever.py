@@ -148,3 +148,36 @@ async def test_retrieve_top_k_larger_than_collection(qdrant_store, fake_openai) 
         assert len(result) == 3
     finally:
         await qdrant_store.delete_collection(collection)
+
+
+@pytest.mark.integration
+async def test_retrieve_empty_query_raises_before_calling_openai(qdrant_store, fake_openai) -> None:
+    """Query vuota → ValueError PRIMA di toccare OpenAI (no waste)."""
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        await qdrant_store.ensure_collection(collection, vector_size=1536, distance="Cosine")
+        retriever = Retriever(store=qdrant_store, openai_client=fake_openai)
+
+        with pytest.raises(ValueError, match="query cannot be empty"):
+            await retriever.retrieve(query="", collection=collection)
+
+        # Garanzia di no-waste: niente call OpenAI.
+        assert fake_openai.calls == []
+    finally:
+        await qdrant_store.delete_collection(collection)
+
+
+@pytest.mark.integration
+async def test_retrieve_whitespace_only_query_raises(qdrant_store, fake_openai) -> None:
+    """Stringa solo whitespace è equivalente a vuota."""
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        await qdrant_store.ensure_collection(collection, vector_size=1536, distance="Cosine")
+        retriever = Retriever(store=qdrant_store, openai_client=fake_openai)
+
+        with pytest.raises(ValueError, match="query cannot be empty"):
+            await retriever.retrieve(query="   \n  \t", collection=collection)
+
+        assert fake_openai.calls == []
+    finally:
+        await qdrant_store.delete_collection(collection)
