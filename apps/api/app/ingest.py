@@ -328,16 +328,17 @@ def main(
         typer.echo(f"Configuration error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 
-    # Summary
+    # Summary. ASCII-only per portabilità Windows (cp1252) — i caratteri
+    # box-drawing Unicode farebbero crashare typer.echo sul PowerShell default.
     ingested = [s for s in stats if s.skipped_reason is None]
     skipped = [s for s in stats if s.skipped_reason is not None]
 
-    typer.echo("─" * 50)
-    typer.echo(f"✓ {len(ingested)} files ingested ({len(skipped)} skipped)")
+    typer.echo("-" * 50)
+    typer.echo(f"OK: {len(ingested)} files ingested ({len(skipped)} skipped)")
     typer.echo(
         f"  {sum(s.chunks for s in ingested)} chunks, {sum(s.tokens for s in ingested):,} tokens"
     )
-    typer.echo("─" * 50)
+    typer.echo("-" * 50)
     if skipped:
         typer.echo("Skipped:")
         for s in skipped:

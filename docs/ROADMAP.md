@@ -221,8 +221,12 @@ in vettori, recuperarli con accuratezza, ed esporre un endpoint
    `search` (top-k + filter shallow AND), `delete_collection`.
    Singleton via `get_vector_store()`. 33 test verdi (17 unit + 16
    integration su Qdrant live).
-6. **Ingestion CLI** (`app/ingest.py`): `uv run python -m app.ingest --source ./sample_docs --collection demo`
-   — orchestra load → chunk → embed → upsert.
+6. ✅ **Ingestion CLI** (`app/ingest.py`): typer command che orchestra
+   load → chunk → embed → upsert end-to-end. Supporta `--source` locale
+   OR URL git (shallow clone), `--collection`, `--repo-subpath`, `--strict`.
+   Resilient di default (skip + summary), `--strict` per fail-fast.
+   Idempotente (overwrite per chunk id). 24 test verdi (unit + integration
+   + CLI surface). Smoke con OpenAI reale verificato.
 7. **Retriever** (`app/rag/retriever.py`): hybrid search = vector + BM25
    (o full-text di Postgres), con metadata filters.
 8. **Reranker** (`app/rag/reranker.py`): wrapper Cohere `rerank-3` con
