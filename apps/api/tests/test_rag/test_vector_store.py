@@ -187,3 +187,69 @@ def test_filter_to_qdrant_multiple_keys_produces_and() -> None:
     assert len(f.must) == 2
     keys = sorted(cond.key for cond in f.must)
     assert keys == ["heading", "source"]
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — Qdrant live (skip se /readyz down)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_ensure_collection_creates_new(qdrant_store, unique_collection) -> None:
+    """Una collection nuova viene creata correttamente."""
+    # Pre: la collection NON esiste.
+    assert not await qdrant_store._client.collection_exists(unique_collection)
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    # Post: la collection esiste, con la dimensione richiesta.
+    assert await qdrant_store._client.collection_exists(unique_collection)
+    info = await qdrant_store._client.get_collection(unique_collection)
+    existing_params = info.config.params.vectors
+    size = (
+        next(iter(existing_params.values())).size
+        if isinstance(existing_params, dict)
+        else existing_params.size
+    )
+    assert size == 4
+
+
+@pytest.mark.integration
+async def test_ensure_collection_idempotent_same_config(qdrant_store, unique_collection) -> None:
+    """Chiamare ensure_collection due volte con stessa config → no-op."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    # Seconda chiamata non deve sollevare nulla.
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+
+
+@pytest.mark.integration
+async def test_ensure_collection_size_mismatch_raises(qdrant_store, unique_collection) -> None:
+    """Stessa collection con vector_size diverso → ValueError."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    with pytest.raises(ValueError, match="vector_size"):
+        await qdrant_store.ensure_collection(unique_collection, vector_size=8)
+
+
+@pytest.mark.integration
+async def test_delete_collection_existing(qdrant_store, unique_collection) -> None:
+    """delete_collection rimuove una collection esistente."""
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+    await qdrant_store.delete_collection(unique_collection)
+    # Dopo delete, ricreiamo la collection pulita così il teardown della
+    # fixture ha qualcosa da pulire (anche se delete su missing è no-op).
+    await qdrant_store.ensure_collection(unique_collection, vector_size=4)
+
+
+@pytest.mark.integration
+async def test_delete_collection_missing_is_noop(qdrant_store) -> None:
+    """delete_collection su una collection inesistente → no-op (no raise)."""
+    import uuid as _uuid
+
+    fake = f"_test_does_not_exist_{_uuid.uuid4().hex[:8]}"
+    # Non sollevare. Se solleva, il test fallisce naturalmente.
+    await qdrant_store.delete_collection(fake)
+
+
+@pytest.mark.integration
+async def test_ensure_collection_invalid_distance_raises(qdrant_store, unique_collection) -> None:
+    """Distance non supportata → ValueError prima di toccare Qdrant."""
+    with pytest.raises(ValueError, match="Distance"):
+        await qdrant_store.ensure_collection(unique_collection, vector_size=4, distance="Manhattan")

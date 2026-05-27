@@ -49,12 +49,15 @@ from collections.abc import Sequence
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
+    Distance,
     FieldCondition,
     Filter,
     MatchValue,
     PointStruct,
     ScoredPoint,
+    VectorParams,
 )
 
 logger = logging.getLogger(__name__)
@@ -256,7 +259,90 @@ def _filter_to_qdrant(filter: dict[str, Any] | None) -> Filter | None:
 # ---------------------------------------------------------------------------
 # Implementazione concreta: Qdrant
 # ---------------------------------------------------------------------------
-# (Implementata nelle task successive.)
+
+
+class QdrantVectorStore:
+    """Implementazione concreta di `VectorStore` su Qdrant.
+
+    Configurata con un URL HTTP e una API key opzionale. Mantiene
+    internamente un `AsyncQdrantClient` long-lived.
+    """
+
+    def __init__(self, url: str, api_key: str | None = None) -> None:
+        self._client = AsyncQdrantClient(url=url, api_key=api_key)
+
+    async def ensure_collection(
+        self,
+        name: str,
+        vector_size: int,
+        distance: str = "Cosine",
+    ) -> None:
+        """Crea la collection se non esiste; no-op se esiste con stessa config.
+
+        Sui mismatch di `vector_size` alziamo ValueError invece di tentare
+        un drop+recreate silenzioso (che cancellerebbe dati). Cambiare
+        embedding model è una decisione esplicita: il chiamante chiama
+        `delete_collection` prima.
+        """
+        distance_enum = self._parse_distance(distance)
+
+        if await self._client.collection_exists(name):
+            info = await self._client.get_collection(name)
+            # `vectors` può essere un VectorParams (single unnamed vector,
+            # nostro caso) o un dict[str, VectorParams] (multi-vector).
+            # Estraiamo la size in modo robusto.
+            existing_params = info.config.params.vectors
+            if isinstance(existing_params, dict):
+                # Per now ci aspettiamo single-vector; se è dict, prendi il
+                # primo entry e confronta. Se servirà multi-vector in M2+,
+                # estenderemo l'API di ensure_collection.
+                existing_size = next(iter(existing_params.values())).size
+            else:
+                existing_size = existing_params.size
+            if existing_size != vector_size:
+                raise ValueError(
+                    f"Collection '{name}' esiste con vector_size={existing_size}, "
+                    f"richiesto={vector_size}. Drop+recreate esplicito necessario."
+                )
+            logger.info(
+                "ensure_collection_noop",
+                extra={"collection": name, "vector_size": vector_size},
+            )
+            return
+
+        await self._client.create_collection(
+            collection_name=name,
+            vectors_config=VectorParams(size=vector_size, distance=distance_enum),
+        )
+        logger.info(
+            "ensure_collection_created",
+            extra={"collection": name, "vector_size": vector_size, "distance": distance},
+        )
+
+    async def delete_collection(self, name: str) -> None:
+        """Elimina la collection. No-op se non esiste."""
+        if not await self._client.collection_exists(name):
+            return
+        await self._client.delete_collection(name)
+        logger.info("delete_collection_done", extra={"collection": name})
+
+    # -----------------------------------------------------------------------
+    # Helpers privati
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_distance(distance: str) -> Distance:
+        """Parse del nome distance ("Cosine"/"Dot"/"Euclid") al tipo enum."""
+        mapping = {
+            "Cosine": Distance.COSINE,
+            "Dot": Distance.DOT,
+            "Euclid": Distance.EUCLID,
+        }
+        if distance not in mapping:
+            raise ValueError(
+                f"Distance '{distance}' non supportata. Valori validi: {sorted(mapping)}"
+            )
+        return mapping[distance]
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +353,7 @@ def _filter_to_qdrant(filter: dict[str, Any] | None) -> Filter | None:
 
 __all__ = [
     "Match",
+    "QdrantVectorStore",
     "VectorPoint",
     "VectorStore",
 ]
