@@ -25,6 +25,7 @@ from typer.testing import CliRunner
 
 from app.ingest import (
     IngestStats,
+    _run,
     ingest_file,
     load_markdown_files,
     resolve_source,
@@ -256,3 +257,142 @@ def test_cli_invalid_source_exits_2(tmp_path: Path) -> None:
     assert result.exit_code == 2
     combined = (result.stderr or "") + (result.stdout or "")
     assert "Configuration error" in combined
+
+
+# ---------------------------------------------------------------------------
+# Integration end-to-end (_run con Qdrant live + FakeOpenAIClient)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_run_happy_path_3_files(qdrant_store, fake_openai, tmp_path) -> None:
+    """3 file markdown vengono tutti ingestati; Qdrant contiene N chunks."""
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        for i, content in enumerate(
+            [
+                "# Doc A\n\nFirst paragraph.\n",
+                "# Doc B\n\nSecond paragraph.\n",
+                "# Doc C\n\nThird paragraph.\n",
+            ]
+        ):
+            (tmp_path / f"doc{i}.md").write_text(content)
+
+        stats = await _run(
+            source=str(tmp_path),
+            collection=collection,
+            strict=False,
+            repo_subpath=None,
+            store=qdrant_store,
+            openai_client=fake_openai,
+        )
+
+        assert len(stats) == 3
+        assert all(s.skipped_reason is None for s in stats)
+
+        total_chunks = sum(s.chunks for s in stats)
+        count_resp = await qdrant_store._client.count(collection, exact=True)
+        assert count_resp.count == total_chunks
+    finally:
+        await qdrant_store.delete_collection(collection)
+
+
+@pytest.mark.integration
+async def test_run_idempotent_rerun(qdrant_store, fake_openai, tmp_path) -> None:
+    """Re-run dello stesso ingest produce stesso count (overwrite per id)."""
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        (tmp_path / "a.md").write_text("# A\n\npara a\n")
+        (tmp_path / "b.md").write_text("# B\n\npara b\n")
+
+        await _run(
+            source=str(tmp_path),
+            collection=collection,
+            strict=False,
+            repo_subpath=None,
+            store=qdrant_store,
+            openai_client=fake_openai,
+        )
+        count1 = (await qdrant_store._client.count(collection, exact=True)).count
+
+        await _run(
+            source=str(tmp_path),
+            collection=collection,
+            strict=False,
+            repo_subpath=None,
+            store=qdrant_store,
+            openai_client=fake_openai,
+        )
+        count2 = (await qdrant_store._client.count(collection, exact=True)).count
+
+        assert count1 == count2
+        assert count1 > 0
+    finally:
+        await qdrant_store.delete_collection(collection)
+
+
+@pytest.mark.integration
+async def test_run_resilient_skips_empty(qdrant_store, fake_openai, tmp_path) -> None:
+    """Resilient default: file vuoto skippato, gli altri ingestati."""
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        (tmp_path / "ok.md").write_text("# ok\n\npara\n")
+        (tmp_path / "empty.md").write_text("")
+
+        stats = await _run(
+            source=str(tmp_path),
+            collection=collection,
+            strict=False,
+            repo_subpath=None,
+            store=qdrant_store,
+            openai_client=fake_openai,
+        )
+
+        ingested = [s for s in stats if s.skipped_reason is None]
+        skipped = [s for s in stats if s.skipped_reason is not None]
+        assert len(ingested) == 1
+        assert len(skipped) == 1
+        assert skipped[0].file == "empty.md"
+        assert "empty" in skipped[0].skipped_reason
+    finally:
+        await qdrant_store.delete_collection(collection)
+
+
+@pytest.mark.integration
+async def test_run_strict_raises_on_empty(qdrant_store, fake_openai, tmp_path) -> None:
+    """In --strict, il primo errore propaga."""
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        (tmp_path / "empty.md").write_text("")
+        (tmp_path / "ok.md").write_text("# ok\n\npara\n")
+
+        with pytest.raises(ValueError, match="empty"):
+            await _run(
+                source=str(tmp_path),
+                collection=collection,
+                strict=True,
+                repo_subpath=None,
+                store=qdrant_store,
+                openai_client=fake_openai,
+            )
+    finally:
+        await qdrant_store.delete_collection(collection)
+
+
+@pytest.mark.integration
+async def test_run_empty_dir_returns_empty(qdrant_store, fake_openai, tmp_path) -> None:
+    """Directory senza .md → ritorna [] senza errore (no collection created)."""
+    collection = f"_test_{uuid.uuid4().hex[:12]}"
+    try:
+        stats = await _run(
+            source=str(tmp_path),
+            collection=collection,
+            strict=False,
+            repo_subpath=None,
+            store=qdrant_store,
+            openai_client=fake_openai,
+        )
+        assert stats == []
+    finally:
+        # collection potrebbe non esistere — delete_collection è no-op.
+        await qdrant_store.delete_collection(collection)
