@@ -15,8 +15,17 @@ Per girare integration:  `uv run pytest -m integration       tests/test_rag/test
 from __future__ import annotations
 
 import pytest
+from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct, ScoredPoint
 
-from app.rag.vector_store import Match, VectorPoint, VectorStore
+from app.rag.vector_store import (
+    _RESERVED_PAYLOAD_KEY,
+    Match,
+    VectorPoint,
+    VectorStore,
+    _filter_to_qdrant,
+    _from_qdrant_scored_point,
+    _to_qdrant_point,
+)
 
 # ---------------------------------------------------------------------------
 # DTO smoke tests (unit, no Qdrant)
@@ -81,3 +90,100 @@ def test_protocol_is_importable() -> None:
     """
     methods = {"ensure_collection", "upsert", "search", "delete_collection"}
     assert methods.issubset(set(dir(VectorStore)))
+
+
+# ---------------------------------------------------------------------------
+# Mapping helpers (unit, no Qdrant)
+# ---------------------------------------------------------------------------
+
+
+def test_to_qdrant_point_normalizes_id_to_uuid() -> None:
+    """Un id stringa arbitraria viene normalizzato a UUID v5 deterministico."""
+    vp = VectorPoint(id="not-a-uuid", vector=[0.1, 0.2], payload={"text": "hi"})
+    ps = _to_qdrant_point(vp)
+    assert isinstance(ps, PointStruct)
+    # Lo UUID prodotto è una stringa nel formato xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.
+    assert isinstance(ps.id, str)
+    assert len(ps.id) == 36
+    assert ps.id.count("-") == 4
+
+
+def test_to_qdrant_point_id_is_deterministic() -> None:
+    """Stesso id originale → stesso UUID Qdrant (upsert idempotente)."""
+    vp1 = VectorPoint(id="stable-id", vector=[0.1])
+    vp2 = VectorPoint(id="stable-id", vector=[0.9])  # vector diverso, id uguale
+    assert _to_qdrant_point(vp1).id == _to_qdrant_point(vp2).id
+
+
+def test_to_qdrant_point_preserves_original_id_in_payload() -> None:
+    """L'id originale viene preservato nel payload sotto chiave riservata."""
+    vp = VectorPoint(id="sha256-abc", vector=[0.1], payload={"text": "hi"})
+    ps = _to_qdrant_point(vp)
+    assert ps.payload[_RESERVED_PAYLOAD_KEY] == "sha256-abc"
+    # Il resto del payload utente è preservato:
+    assert ps.payload["text"] == "hi"
+
+
+def test_from_qdrant_scored_point_restores_original_id() -> None:
+    """Il Match.id è l'id originale, non l'UUID Qdrant. La chiave riservata
+    viene rimossa dal payload pubblico."""
+    sp = ScoredPoint(
+        id="00000000-0000-0000-0000-000000000001",
+        version=0,
+        score=0.87,
+        payload={_RESERVED_PAYLOAD_KEY: "original-sha256-xyz", "text": "hi"},
+    )
+    m = _from_qdrant_scored_point(sp)
+    assert m.id == "original-sha256-xyz"
+    assert m.score == 0.87
+    assert m.payload == {"text": "hi"}
+    # La chiave riservata NON deve trapelare al consumer:
+    assert _RESERVED_PAYLOAD_KEY not in m.payload
+
+
+def test_from_qdrant_scored_point_handles_missing_reserved_key() -> None:
+    """Fallback robusto: se per qualche motivo manca la chiave riservata
+    (es. punto inserito direttamente bypassando il nostro upsert),
+    il Match.id ricade sull'UUID Qdrant come stringa."""
+    sp = ScoredPoint(
+        id="00000000-0000-0000-0000-000000000002",
+        version=0,
+        score=0.5,
+        payload={"text": "hi"},  # niente __vp_id
+    )
+    m = _from_qdrant_scored_point(sp)
+    assert m.id == "00000000-0000-0000-0000-000000000002"
+    assert m.payload == {"text": "hi"}
+
+
+def test_filter_to_qdrant_none_returns_none() -> None:
+    """filter=None → None (Qdrant accetta None per 'nessun filtro')."""
+    assert _filter_to_qdrant(None) is None
+
+
+def test_filter_to_qdrant_empty_dict_returns_none() -> None:
+    """filter={} → None (nessuna condizione = nessun filtro)."""
+    assert _filter_to_qdrant({}) is None
+
+
+def test_filter_to_qdrant_single_key_produces_field_condition() -> None:
+    """{key: value} → Filter(must=[FieldCondition(key=key, match=MatchValue(value=value))])."""
+    f = _filter_to_qdrant({"source": "intro.md"})
+    assert isinstance(f, Filter)
+    assert f.must is not None
+    assert len(f.must) == 1
+    cond = f.must[0]
+    assert isinstance(cond, FieldCondition)
+    assert cond.key == "source"
+    assert isinstance(cond.match, MatchValue)
+    assert cond.match.value == "intro.md"
+
+
+def test_filter_to_qdrant_multiple_keys_produces_and() -> None:
+    """{k1: v1, k2: v2} → tutti come `must` (AND logico)."""
+    f = _filter_to_qdrant({"source": "a.md", "heading": "H1"})
+    assert isinstance(f, Filter)
+    assert f.must is not None
+    assert len(f.must) == 2
+    keys = sorted(cond.key for cond in f.must)
+    assert keys == ["heading", "source"]

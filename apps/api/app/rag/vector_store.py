@@ -44,10 +44,18 @@ embedding (text-embedding-3-small, 1536-dim).
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Sequence
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
+from qdrant_client.models import (
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PointStruct,
+    ScoredPoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +184,73 @@ class VectorStore(Protocol):
     async def delete_collection(self, name: str) -> None:
         """Elimina la collection. No-op se non esiste."""
         ...
+
+
+# ---------------------------------------------------------------------------
+# Internals: ID normalization & mapping helpers
+# ---------------------------------------------------------------------------
+
+# Namespace UUID fisso per la derivazione deterministica dell'id Qdrant
+# da una stringa arbitraria (es. sha256 hex dal chunker). Usiamo un namespace
+# da RFC 4122 § Appendix C — è un valore arbitrario ma stabile e
+# riconoscibile; l'unica cosa che conta è che NON cambi mai.
+_ID_NAMESPACE = uuid.UUID("6ba7b812-9dad-11d1-80b4-00c04fd430c8")
+
+# Chiave riservata nel payload Qdrant: contiene l'id originale del
+# VectorPoint, in modo che `Match` possa restituirlo invece dell'UUID
+# Qdrant interno. Prefisso "__" per minimizzare collisioni con metadata
+# user-defined.
+_RESERVED_PAYLOAD_KEY = "__vp_id"
+
+
+def _normalize_id(raw: str) -> str:
+    """Mappa una stringa stabile a un UUID v5 deterministico.
+
+    Qdrant accetta come point id SOLO uint64 o UUID. Stringhe arbitrarie
+    (sha256 hex, slug, ecc.) vanno tradotte. UUID v5 è perfetto: stesso
+    input → stesso UUID, sempre, ovunque.
+    """
+    return str(uuid.uuid5(_ID_NAMESPACE, raw))
+
+
+def _to_qdrant_point(point: VectorPoint) -> PointStruct:
+    """VectorPoint → PointStruct di qdrant-client.
+
+    Side-effect: arricchisce il payload con la chiave riservata
+    `__vp_id` per preservare l'id originale.
+    """
+    qdrant_id = _normalize_id(point.id)
+    payload = {**point.payload, _RESERVED_PAYLOAD_KEY: point.id}
+    return PointStruct(id=qdrant_id, vector=point.vector, payload=payload)
+
+
+def _from_qdrant_scored_point(sp: ScoredPoint) -> Match:
+    """ScoredPoint di qdrant-client → Match nostro.
+
+    Side-effect: rimuove la chiave riservata `__vp_id` dal payload prima
+    di esporlo al consumer, e la usa come `Match.id`. Se manca, fallback
+    sull'UUID Qdrant (caso "rotto" — punto inserito senza il nostro upsert).
+    """
+    payload = dict(sp.payload or {})
+    original_id = payload.pop(_RESERVED_PAYLOAD_KEY, str(sp.id))
+    return Match(id=original_id, score=sp.score, payload=payload)
+
+
+def _filter_to_qdrant(filter: dict[str, Any] | None) -> Filter | None:
+    """Dict shallow equality → Filter Qdrant con AND logico (clausola `must`).
+
+    None o dict vuoto → None (Qdrant accetta None per "nessun filtro").
+    Esempio: {"source": "a.md", "heading": "H1"} → Filter(must=[
+        FieldCondition(key="source", match=MatchValue(value="a.md")),
+        FieldCondition(key="heading", match=MatchValue(value="H1")),
+    ])
+    """
+    if not filter:
+        return None
+    conditions = [
+        FieldCondition(key=key, match=MatchValue(value=value)) for key, value in filter.items()
+    ]
+    return Filter(must=conditions)
 
 
 # ---------------------------------------------------------------------------
