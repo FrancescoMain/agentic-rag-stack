@@ -58,6 +58,10 @@ dependencies = [
   # coerenza con FastAPI/embedder. Il pacchetto include i tipi: VectorParams,
   # Distance, PointStruct, Filter, FieldCondition, MatchValue, ScoredPoint.
   "qdrant-client>=1.11,<2",
+  # typer: CLI framework built on click + type hints, stesso autore di FastAPI.
+  # Lo usiamo per `app/ingest.py` (M2 task #6). Versione 0.12+ supporta la
+  # sintassi `Annotated[T, typer.Option(...)]` che è il pattern 2026.
+  "typer>=0.12,<1",
 ]
 
 # -----------------------------------------------------------------------------

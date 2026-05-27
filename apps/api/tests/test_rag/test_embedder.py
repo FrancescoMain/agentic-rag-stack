@@ -33,7 +33,7 @@ from app.rag.embedder import (
     EmbeddingResult,
     embed_texts,
 )
-from tests.test_rag.conftest import FakeOpenAIClient
+from tests.conftest import FakeOpenAIClient
 
 # Le eccezioni del SDK OpenAI 2.x richiedono una `httpx.Response`
 # reale (per accedere a `.request` internamente). Costruiamo un
