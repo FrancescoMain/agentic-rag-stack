@@ -1,3 +1,6 @@
-ignoredBuiltDependencies:
-  - sharp
-  - unrs-resolver
+# pnpm 10+ richiede che l'approvazione dei build script (postinstall) viva qui,
+# non più in package.json. sharp = image optimization di Next.js;
+# unrs-resolver = resolver nativo usato da eslint-config-next.
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
