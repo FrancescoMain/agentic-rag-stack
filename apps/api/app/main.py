@@ -53,6 +53,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
+from typing import Any
 
 # Anthropic SDK: client async per chiamare Claude. `APIError` è la
 # superclasse di tutti gli errori upstream (timeout, 5xx, rate limit).
@@ -77,11 +78,22 @@ from openai import AsyncOpenAI
 # Pydantic BaseModel + Field per schemi I/O tipizzati e validati.
 from pydantic import BaseModel, Field, ValidationError
 
+# qdrant-client raises UnexpectedResponse per gli HTTP error upstream.
+# Lo usiamo per distinguere 404 (collection inesistente) da 5xx generici
+# nell'endpoint /retrieve (Task 3 del plan #10a — aggiunto qui per
+# evitare un secondo import-shuffle).
+from qdrant_client.http.exceptions import UnexpectedResponse  # noqa: F401
+
 # Settings: il singleton di configurazione (vedi app/config.py).
 from app.config import settings
 
 # Logging: setup centralizzato + helper per il request_id.
 from app.log import set_request_id, setup_logging
+
+# Retriever (M2 task #7a): orchestratore embed query + vector_store.search.
+# Iniettato come dependency di FastAPI nell'endpoint /retrieve
+# (Task 3 del plan #10a — l'import vive qui dal Task 1 per evitare shuffle).
+from app.rag.retriever import Retriever, get_retriever  # noqa: F401
 
 # Servizio classificatore: funzione pura + schema risultato.
 from app.services.classifier import ClassifyResult, classify_text
@@ -342,6 +354,51 @@ class ClassifyRequest(BaseModel):
     """Body atteso da POST /classify."""
 
     text: str = Field(min_length=1, max_length=4000)
+
+
+# ============================================================================
+# Schemi per /retrieve (M2 task #10a)
+# ============================================================================
+# RetrievedChunk è strutturalmente uguale a app.rag.vector_store.Match ma
+# vive come schema HTTP separato per evitare leak di refactor interni nel
+# response JSON pubblico.
+
+
+class RetrieveRequest(BaseModel):
+    """Request per POST /retrieve."""
+
+    query: str = Field(
+        min_length=1,
+        description="Domanda in linguaggio naturale.",
+    )
+    collection: str | None = Field(
+        default=None,
+        description="Nome collection Qdrant. Default: settings.qdrant_collection_name.",
+    )
+    top_k: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        description="Numero max di risultati.",
+    )
+    filter: dict[str, Any] | None = Field(
+        default=None,
+        description="Shallow equality match sul payload (AND fra chiavi).",
+    )
+
+
+class RetrievedChunk(BaseModel):
+    """Singolo chunk recuperato (id originale + score + payload)."""
+
+    id: str
+    score: float
+    payload: dict[str, Any]
+
+
+class RetrieveResponse(BaseModel):
+    """Response per POST /retrieve. chunks ordinati per score decrescente."""
+
+    chunks: list[RetrievedChunk]
 
 
 # ---------------------------------------------------------------------------
