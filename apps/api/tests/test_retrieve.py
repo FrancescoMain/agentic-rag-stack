@@ -98,3 +98,38 @@ def test_retrieve_default_top_k_is_5(client: TestClient, fake_retriever) -> None
     response = client.post("/retrieve", json={"query": "x"})
     assert response.status_code == 200
     assert fake_retriever.calls[0]["top_k"] == 5
+
+
+# ----------------------------------------------------------------------------
+# Validation 422: input fuori dai vincoli Pydantic.
+# ----------------------------------------------------------------------------
+# Pydantic rifiuta la request PRIMA che l'handler venga eseguito; FastAPI
+# traduce automaticamente il ValidationError in HTTP 422 Unprocessable
+# Entity. Verifichiamo anche che il retriever NON sia stato chiamato:
+# è la conferma che la barriera è effettivamente "before-handler".
+
+
+def test_retrieve_empty_query_422(client: TestClient, fake_retriever) -> None:
+    """query='' → 422 (Pydantic min_length=1). Il fake NON viene chiamato."""
+    response = client.post("/retrieve", json={"query": ""})
+    assert response.status_code == 422
+    assert fake_retriever.calls == []
+
+
+def test_retrieve_top_k_zero_422(client: TestClient, fake_retriever) -> None:
+    """top_k=0 → 422 (Pydantic ge=1). Il fake NON viene chiamato."""
+    response = client.post("/retrieve", json={"query": "x", "top_k": 0})
+    assert response.status_code == 422
+    assert fake_retriever.calls == []
+
+
+def test_retrieve_top_k_too_large_422(client: TestClient, fake_retriever) -> None:
+    """top_k=1000 → 422 (Pydantic le=50). Il fake NON viene chiamato.
+
+    Il tetto a 50 è una guardia di costo/latenza: un top_k enorme
+    significherebbe embedding+search inutilmente cari. Se il caso d'uso
+    cambierà, il vincolo si alza nello schema (single source of truth).
+    """
+    response = client.post("/retrieve", json={"query": "x", "top_k": 1000})
+    assert response.status_code == 422
+    assert fake_retriever.calls == []
