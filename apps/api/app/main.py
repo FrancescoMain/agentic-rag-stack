@@ -79,10 +79,9 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, ValidationError
 
 # qdrant-client raises UnexpectedResponse per gli HTTP error upstream.
-# Lo usiamo per distinguere 404 (collection inesistente) da 5xx generici
-# nell'endpoint /retrieve (Task 3 del plan #10a — aggiunto qui per
-# evitare un secondo import-shuffle).
-from qdrant_client.http.exceptions import UnexpectedResponse  # noqa: F401
+# Lo usiamo nell'endpoint /retrieve per distinguere 404 (collection
+# inesistente) da 5xx generici (mappati a HTTP 502).
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 # Settings: il singleton di configurazione (vedi app/config.py).
 from app.config import settings
@@ -91,9 +90,8 @@ from app.config import settings
 from app.log import set_request_id, setup_logging
 
 # Retriever (M2 task #7a): orchestratore embed query + vector_store.search.
-# Iniettato come dependency di FastAPI nell'endpoint /retrieve
-# (Task 3 del plan #10a — l'import vive qui dal Task 1 per evitare shuffle).
-from app.rag.retriever import Retriever, get_retriever  # noqa: F401
+# Iniettato come dependency di FastAPI nell'endpoint /retrieve.
+from app.rag.retriever import Retriever, get_retriever
 
 # Servizio classificatore: funzione pura + schema risultato.
 from app.services.classifier import ClassifyResult, classify_text
@@ -502,3 +500,69 @@ async def classify(
             status_code=502,
             detail="Errore upstream durante la chiamata al modello.",
         ) from exc
+
+
+# ===========================================================================
+# Endpoint: POST /retrieve — dense semantic retrieval (M2 task #10a)
+# ===========================================================================
+# Esponiamo via HTTP il `Retriever` dense costruito in M2 #7a. Pattern:
+#   1. Pydantic valida il body (query non-vuota, top_k in [1,50]).
+#   2. Dependency injection del retriever via `Depends(get_retriever)` —
+#      coerente con `get_anthropic_client` per /classify, e sostituibile
+#      nei test via `app.dependency_overrides`.
+#   3. Errori upstream del vector store (Qdrant) sono tradotti in HTTP
+#      semanticamente corretti: 404 se la collection non esiste, 502
+#      per il resto (errore di un servizio a valle, non un nostro bug).
+#
+# Spec: docs/superpowers/specs/2026-05-27-retrieve-endpoint-design.md
+
+
+@app.post("/retrieve", response_model=RetrieveResponse)
+async def retrieve(
+    request: RetrieveRequest,
+    retriever: Retriever = Depends(get_retriever),
+) -> RetrieveResponse:
+    """Dense semantic retrieval da Qdrant.
+
+    Se `collection` non è specificata nel body, usa
+    `settings.qdrant_collection_name` (default operativo del backend).
+
+    Errori mappati:
+      - 422 Unprocessable Entity: validazione Pydantic (query="",
+        top_k fuori range). Gestito automaticamente da FastAPI.
+      - 404 Not Found: la collection Qdrant richiesta non esiste.
+      - 502 Bad Gateway: altri errori upstream del vector store.
+    """
+    collection = request.collection or settings.qdrant_collection_name
+
+    try:
+        matches = await retriever.retrieve(
+            query=request.query,
+            collection=collection,
+            top_k=request.top_k,
+            filter=request.filter,
+        )
+    except ValueError as exc:
+        # Rete di sicurezza: Pydantic dovrebbe già aver respinto query="".
+        # Resta utile se il Retriever introdurrà altri controlli interni
+        # (es. fail-fast su whitespace-only) — restano errori dell'INPUT
+        # del client, quindi 422 (non 400, per coerenza con FastAPI).
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except UnexpectedResponse as exc:
+        # qdrant-client alza UnexpectedResponse per qualsiasi non-2xx
+        # ricevuto da Qdrant. Distinguiamo 404 (utile messaggio: nome
+        # collection) dal resto (502 generico, dettaglio dalla reason).
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=404,
+                detail=f"collection '{collection}' not found",
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"vector store error: {exc.reason_phrase or exc}",
+        ) from exc
+
+    # Convertiamo Match (modello interno) → RetrievedChunk (schema HTTP).
+    # Sono strutturalmente identici, ma li teniamo distinti per evitare
+    # leak di refactor interni nel contratto pubblico dell'API.
+    return RetrieveResponse(chunks=[RetrievedChunk(**m.model_dump()) for m in matches])
