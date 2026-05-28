@@ -22,6 +22,7 @@ Il retriever è sostituito da `FakeRetriever` via
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 from app.config import settings
 from app.rag.vector_store import Match
@@ -133,3 +134,61 @@ def test_retrieve_top_k_too_large_422(client: TestClient, fake_retriever) -> Non
     response = client.post("/retrieve", json={"query": "x", "top_k": 1000})
     assert response.status_code == 422
     assert fake_retriever.calls == []
+
+
+# ----------------------------------------------------------------------------
+# Upstream error mapping: come l'endpoint reagisce quando Qdrant fallisce.
+# ----------------------------------------------------------------------------
+# Il vector store è una dipendenza esterna; qualunque errore HTTP da Qdrant
+# arriva al nostro codice come `qdrant_client.http.exceptions.UnexpectedResponse`.
+# L'endpoint distingue:
+#   - 404 da Qdrant → 404 al client, con nome della collection nel detail
+#     (errore del client: ha chiesto una collection inesistente).
+#   - tutto il resto → 502 Bad Gateway (errore di un servizio a valle,
+#     non colpa del client e non nostra).
+
+
+def _make_unexpected_response(status_code: int) -> UnexpectedResponse:
+    """Costruisce un UnexpectedResponse minimo per i test.
+
+    Il costruttore richiede (status_code, reason_phrase, content, headers).
+    Lo wrappiamo in un helper perché serve a 2+ test e mette via un po' di
+    rumore.
+    """
+    return UnexpectedResponse(
+        status_code=status_code,
+        reason_phrase="Mock Error",
+        content=b"mock body",
+        headers={},
+    )
+
+
+def test_retrieve_collection_not_found_404(client: TestClient, fake_retriever) -> None:
+    """Qdrant ritorna 404 (collection inesistente) → endpoint risponde 404.
+
+    Il detail include il nome della collection per aiutare il debug
+    lato chiamante ("ho sbagliato il nome?").
+    """
+    fake_retriever.error_to_raise = _make_unexpected_response(404)
+
+    response = client.post(
+        "/retrieve",
+        json={"query": "x", "collection": "does-not-exist"},
+    )
+    assert response.status_code == 404
+    body = response.json()
+    assert "does-not-exist" in body["detail"]
+
+
+def test_retrieve_qdrant_500_returns_502(client: TestClient, fake_retriever) -> None:
+    """Qdrant ritorna 500 (errore generico upstream) → endpoint risponde 502.
+
+    502 Bad Gateway è la semantica HTTP corretta: "il server upstream da
+    cui dipendo ha fallito". Non 500, perché 500 implicherebbe un bug
+    nel NOSTRO codice.
+    """
+    fake_retriever.error_to_raise = _make_unexpected_response(500)
+
+    response = client.post("/retrieve", json={"query": "x"})
+    assert response.status_code == 502
+    assert "vector store error" in response.json()["detail"]
