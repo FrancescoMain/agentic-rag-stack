@@ -35,6 +35,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app, get_anthropic_client
+from app.rag.retriever import get_retriever
+from app.rag.vector_store import Match
 
 logger = logging.getLogger(__name__)
 
@@ -298,3 +300,71 @@ async def unique_collection(qdrant_store: Any) -> Any:
             await qdrant_store.delete_collection(name)
         except Exception as exc:  # noqa: BLE001 — è un teardown best-effort
             logger.warning("Cleanup collection %s fallito: %s", name, exc)
+
+
+# ============================================================================
+# FakeRetriever (per i test dell'endpoint POST /retrieve, M2 task #10a)
+# ============================================================================
+# Stesso pattern di FakeAnthropicClient: implementazione manuale (no
+# unittest.mock) per render esplicita la superficie che l'endpoint usa.
+# L'endpoint chiama UN solo metodo del retriever: `retrieve(...)` async.
+# Tutto il resto (embedder, vector store) sta sotto la cintura e qui non
+# ci interessa: stiamo testando lo strato HTTP, non la pipeline RAG.
+#
+# Si aggancia all'app FastAPI tramite:
+#     app.dependency_overrides[get_retriever] = lambda: fake
+# che è il modo "ufficiale" di FastAPI per sostituire una dependency nei
+# test (vedi i docs: https://fastapi.tiangolo.com/advanced/testing-dependencies/).
+
+
+class FakeRetriever:
+    """Test double per `app.rag.retriever.Retriever`.
+
+    Configurabile dal test:
+        fake.matches_to_return = [Match(id="x", score=0.9, payload={...})]
+        fake.error_to_raise = UnexpectedResponse(...)
+
+    Espone la stessa superficie usata dall'endpoint: `retrieve(...)` async.
+    Ogni chiamata viene loggata in `fake.calls` per asserzioni dai test.
+    """
+
+    def __init__(self) -> None:
+        self.matches_to_return: list[Match] = []
+        self.error_to_raise: Exception | None = None
+        # Log delle chiamate, per asserzioni: ogni elemento è un dict
+        # con i kwargs ricevuti.
+        self.calls: list[dict[str, Any]] = []
+
+    async def retrieve(
+        self,
+        query: str,
+        collection: str,
+        top_k: int = 5,
+        filter: dict[str, Any] | None = None,
+    ) -> list[Match]:
+        self.calls.append(
+            {
+                "query": query,
+                "collection": collection,
+                "top_k": top_k,
+                "filter": filter,
+            }
+        )
+        if self.error_to_raise is not None:
+            raise self.error_to_raise
+        return self.matches_to_return
+
+
+@pytest.fixture
+def fake_retriever() -> FakeRetriever:
+    """Crea un FakeRetriever e lo aggancia alla dependency `get_retriever`.
+
+    Yield-fixture: setup + cleanup di `app.dependency_overrides`.
+    Il cleanup è essenziale: senza, l'override del test precedente
+    si propagherebbe ai successivi e cambierebbe il comportamento di
+    qualunque test che chiama un endpoint usando `Depends(get_retriever)`.
+    """
+    fake = FakeRetriever()
+    app.dependency_overrides[get_retriever] = lambda: fake
+    yield fake
+    app.dependency_overrides.clear()
