@@ -192,3 +192,46 @@ def test_retrieve_qdrant_500_returns_502(client: TestClient, fake_retriever) -> 
     response = client.post("/retrieve", json={"query": "x"})
     assert response.status_code == 502
     assert "vector store error" in response.json()["detail"]
+
+
+# ----------------------------------------------------------------------------
+# Match shape preservation: il contratto pubblico deve esporre i campi del
+# Match interno SENZA alterarli. È una protezione contro refactor accidentali
+# (es. "ottimizzo" mappando id → un UUID generato, e rompo i client a valle).
+# ----------------------------------------------------------------------------
+
+
+def test_retrieve_match_shape_preserved(client: TestClient, fake_retriever) -> None:
+    """Il Match dal retriever viene serializzato field-by-field nel JSON.
+
+    Verifiche:
+      - `id` originale (sha256-like, NOT UUID-format) preservato intatto.
+        Qdrant accetta solo UUID o int come "point id" interno, ma il
+        nostro `Match.id` deve esporre l'id ORIGINALE (sha256 del testo
+        del chunk) — è ciò che permette ai client di tracciare i chunk
+        in modo deterministico. Cambiarlo silenziosamente rompe i client.
+      - `payload` nested arbitrario (dict di dict, liste) → invariato.
+      - `score` float preservato con precisione.
+    """
+    nested_payload = {
+        "text": "the quick brown fox",
+        "source": "tutorial/animals.md",
+        "heading": "Mammals > Foxes",
+        "position": 7,
+        "token_count": 42,
+        "extra": {"nested_key": "nested_value", "list": [1, 2, 3]},
+    }
+    fake_retriever.matches_to_return = [
+        Match(
+            id="sha256-original-not-uuid-format-abc123",
+            score=0.7654321,
+            payload=nested_payload,
+        ),
+    ]
+
+    response = client.post("/retrieve", json={"query": "fox"})
+    assert response.status_code == 200
+    chunk = response.json()["chunks"][0]
+    assert chunk["id"] == "sha256-original-not-uuid-format-abc123"
+    assert chunk["score"] == 0.7654321
+    assert chunk["payload"] == nested_payload

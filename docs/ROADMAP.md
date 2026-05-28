@@ -242,8 +242,20 @@ in vettori, recuperarli con accuratezza, ed esporre un endpoint
    fallback "no rerank" se non c'è chiave.
 9. **Citation builder** (`app/rag/citations.py`): trasforma chunk
    recuperati in oggetti `{chunk_id, source, score, snippet}`.
-10. **Endpoint** `POST /retrieve`: `{query, top_k, filters}` →
-    `{chunks: [...], citations: [...]}`. Schema Pydantic.
+10a. ✅ **Endpoint `POST /retrieve` (dense-only)**: schemi Pydantic
+     (RetrieveRequest/RetrievedChunk/RetrieveResponse) inline in
+     `app/main.py`. Dependency injection del retriever via
+     `Depends(get_retriever)`. Validazione: query non-vuota, top_k in
+     [1, 50]. Error mapping: Qdrant 404 → HTTP 404 con collection
+     name nel detail; altri Qdrant errors → HTTP 502. Default
+     collection da `settings.qdrant_collection_name` se omesso.
+     11 test unit verdi (TestClient + `FakeRetriever` via
+     `app.dependency_overrides`). Smoke con curl + corpus reale
+     verificato (top result coerente, id sha256-like preservato).
+10b. ⚪ **Endpoint `POST /retrieve` arricchito** — backlog. Quando
+     #8 reranker e #9 citation builder saranno fatti, modificheranno
+     questo endpoint per aggiungere reranker step + arricchire la
+     response con `citations` strutturate.
 11. **Golden dataset** (`app/evals/golden_datasets/`): 20-50 coppie
     `(query, expected_chunk_ids)` curate a mano.
 12. **Eval `precision_at_k`** (`app/evals/evaluators/`): misura quanti
